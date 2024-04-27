@@ -1,0 +1,34 @@
+images:
+    - source: docker.io/library/ubuntu
+      targets:
+        - 407099639081.dkr.ecr.sa-east-1.amazonaws.com/synctest/ubuntu
+        - public.ecr.aws/w7v1z7y4/synctest/ubuntu
+      requiredPlatforms:
+        - "linux/amd64"
+        - "linux/arm64"
+logging:
+    colors: true
+    format: text
+    level: INFO
+    output: stdout
+    timeformat: "15:04:05"
+repositories:
+    - auth:
+        helper: "ecr"
+      name: ECR Private
+      url: 407099639081.dkr.ecr.sa-east-1.amazonaws.com
+    - auth:
+        helper: "ecr-public"
+      name: ECR Public
+      url: public.ecr.aws/w7v1z7y4
+telemetry:
+    enabled: true
+    metrics:
+        exporter: prometheus
+        prometheus:
+            address: 127.0.0.1:9090
+            path: /metrics
+        stdout:
+            interval: 5s
+ecr:
+  region: sa-east-1
