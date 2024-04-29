@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: docker-sync
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: docker-sync-account
+  namespace: docker-sync
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-sync-config
+  namespace: docker-sync
+data:
+  config.yaml: |
+    ecr:
+      region: us-east-1
+    logging:
+      colors: true
+      format: text
+      level: INFO
+      output: stdout
+      timeformat: "15:04:05"
+    sync:
+      images:
+        - source: docker.io/library/ubuntu
+          targets:
+            - docker.io/kamushadenes/ubuntu
+      interval: 5m
+      maxerrors: 5
+      registries:
+        - auth:
+            helper: ""
+            password: ""
+            token: ""
+            username: ""
+          name: Docker Hub
+          url: docker.io
+    telemetry:
+      enabled: false
+      metrics:
+        exporter: prometheus
+        prometheus:
+          address: 127.0.0.1:9090
+          path: /metrics
+        stdout:
+          interval: 5s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-sync
+  namespace: docker-sync
+  labels:
+    app: docker-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docker-sync
+  template:
+    metadata:
+      labels:
+        app: docker-sync
+    spec:
+      serviceAccountName: docker-sync-account
+      containers:
+        - name: docker-sync
+          image: altinity/docker-sync
+          resources:
+            limits:
+              memory: "512Mi"
+            requests:
+              memory: "256Mi"
+          ports:
+            - containerPort: 9090
+              name: metrics
+          volumeMounts:
+            - mountPath: /config.yaml
+              subPath: config.yaml
+              name: config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: docker-sync-config
+            items:
+              - key: config.yaml
+                path: config.yaml

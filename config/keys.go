@@ -58,10 +58,20 @@ var (
 		WithValidDuration())
 	// endregion
 
-	// region Repositories
+	// region Sync
 
-	// Repositories specifies the repositories to use for pulling and pushing images.
-	Repositories = NewKey("repositories",
+	// SyncMaxErrors specifies the maximum number of errors that can occur before the application exits.
+	SyncMaxErrors = NewKey("sync.maxErrors",
+		WithDefaultValue(5),
+		WithValidInt())
+
+	// SyncInterval specifies the interval at which images are synchronized.
+	SyncInterval = NewKey("sync.interval",
+		WithDefaultValue("5m"),
+		WithValidDuration())
+
+	// SyncRegistries specifies the repositories to use for pulling and pushing images.
+	SyncRegistries = NewKey("sync.registries",
 		WithDefaultValue([]map[string]interface{}{
 			{
 				"name": "Docker Hub",
@@ -70,22 +80,19 @@ var (
 					"username": "",
 					"password": "",
 					"token":    "",
-					"helper":   "docker-credential-desktop",
+					"helper":   "",
 				},
 			},
 		}),
 		WithValidRepositories())
-	// endregion
 
-	// region Images
-
-	// Images specifies the images to synchronize.
-	Images = NewKey("images",
+	// SyncImages specifies the images to synchronize.
+	SyncImages = NewKey("sync.images",
 		WithDefaultValue([]map[string]interface{}{
 			{
 				"source": "docker.io/library/ubuntu",
 				"targets": []string{
-					"docker.io/library/ubuntu:latest",
+					"docker.io/library/ubuntu",
 				},
 			},
 		}),

@@ -9,7 +9,7 @@ import (
 )
 
 func getAuth(url string, name string) (remote.Option, string) {
-	repositories := config.Repositories.Repositories()
+	repositories := config.SyncRegistries.Repositories()
 
 	var repo *structs.Repository
 

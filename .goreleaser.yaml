@@ -18,9 +18,11 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - windows
-      - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./cmd/dockersync
+    binary: docker-sync
 
 archives:
   - format: tar.gz
@@ -29,10 +31,6 @@ archives:
       {{- .Os }}_
       {{- .Arch }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        format: zip
 
 changelog:
   sort: asc
@@ -47,3 +45,22 @@ release:
     name: "docker-sync"
 
   name_template: "{{.ProjectName}}-v{{.Version}}"
+
+dockers:
+  - image_templates:
+      - "altinity/docker-sync:{{.Version}}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform linux/amd64"
+  - image_templates:
+      - "altinity/docker-sync:{{.Version}}-arm64v6"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform linux/arm64/v8"
+docker_manifests:
+  - name_template: "altinity/docker-sync:{{.Version}}"
+    image_templates:
+      - "altinity/docker-sync:{{.Version}}-amd64"
+      - "altinity/docker-sync:{{.Version}}-arm64v8"

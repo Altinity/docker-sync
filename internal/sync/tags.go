@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Altinity/docker-sync/structs"
@@ -48,7 +49,7 @@ func SyncTag(image *structs.Image, tag string) error {
 	for k := range idxManifest.Manifests {
 		platform := fmt.Sprintf("%s/%s", idxManifest.Manifests[k].Platform.OS, idxManifest.Manifests[k].Platform.Architecture)
 
-		if !stringInSlice(platform, expectedPlatforms) {
+		if !slices.Contains(expectedPlatforms, platform) {
 			continue
 		}
 
@@ -56,7 +57,7 @@ func SyncTag(image *structs.Image, tag string) error {
 	}
 
 	for _, platform := range expectedPlatforms {
-		if !stringInSlice(platform, foundPlatforms) {
+		if !slices.Contains(foundPlatforms, platform) {
 			merr = multierr.Append(merr, fmt.Errorf("image %s:%s is missing platform %s", image.Source, tag, platform))
 		}
 	}

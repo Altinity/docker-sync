@@ -2,6 +2,7 @@ package dockersync
 
 import (
 	"context"
+	"time"
 
 	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/sync"
@@ -11,8 +12,6 @@ import (
 )
 
 func Run(ctx context.Context) error {
-	var merr error
-
 	if config.TelemetryEnabled.Bool() {
 		go func() {
 			if err := telemetry.Start(ctx); err != nil {
@@ -23,20 +22,37 @@ func Run(ctx context.Context) error {
 		}()
 	}
 
-	images := config.Images.Images()
+	images := config.SyncImages.Images()
 
-	for k := range images {
-		image := images[k]
+	var merr error
 
-		if err := sync.SyncImage(image); err != nil {
-			merr = multierr.Append(merr, err)
+	for {
+		for k := range images {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				image := images[k]
+
+				if err := sync.SyncImage(image); err != nil {
+					log.Error().
+						Err(err).
+						Str("source", image.Source).
+						Msg("Failed to sync image")
+
+					merr = multierr.Append(merr, err)
+
+					if config.SyncMaxErrors.Int() > 0 {
+						if len(multierr.Errors(merr)) >= config.SyncMaxErrors.Int() {
+							return merr
+						}
+					}
+				}
+			}
 		}
-	}
 
-	errs := multierr.Errors(merr)
-	if len(errs) > 0 {
-		return merr
+		dur := config.SyncInterval.Duration()
+		log.Info().Dur("interval", dur).Msg("Waiting for next sync")
+		time.Sleep(dur)
 	}
-
-	return nil
 }
