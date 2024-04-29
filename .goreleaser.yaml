@@ -52,13 +52,13 @@ dockers:
     use: buildx
     dockerfile: Dockerfile
     build_flag_templates:
-      - "--platform linux/amd64"
+      - "--platform=linux/amd64"
   - image_templates:
       - "altinity/docker-sync:{{.Version}}-arm64v6"
     use: buildx
     dockerfile: Dockerfile
     build_flag_templates:
-      - "--platform linux/arm64/v8"
+      - "--platform=linux/arm64/v8"
 docker_manifests:
   - name_template: "altinity/docker-sync:{{.Version}}"
     image_templates:
