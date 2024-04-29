@@ -54,7 +54,7 @@ dockers:
     build_flag_templates:
       - "--platform=linux/amd64"
   - image_templates:
-      - "altinity/docker-sync:{{.Version}}-arm64v6"
+      - "altinity/docker-sync:{{.Version}}-arm64v8"
     use: buildx
     dockerfile: Dockerfile
     build_flag_templates:
