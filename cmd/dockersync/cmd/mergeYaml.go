@@ -11,7 +11,6 @@ import (
 
 var yamlFiles []string
 
-// mergeYamlCmd represents the mergeYaml command
 var mergeYamlCmd = &cobra.Command{
 	Use:   "mergeYaml",
 	Short: "Merge two yaml files",
