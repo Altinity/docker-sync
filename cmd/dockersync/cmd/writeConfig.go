@@ -16,7 +16,6 @@ var writeConfigCmd = &cobra.Command{
 		outFile := cmd.Flag("output").Value.String()
 
 		if outFile == "" {
-
 			settings := viper.AllSettings()
 			yamlSettings, err := yaml.Marshal(settings)
 			if err != nil {
