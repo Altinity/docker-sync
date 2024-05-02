@@ -59,6 +59,8 @@ dockers:
     dockerfile: Dockerfile
     build_flag_templates:
       - "--platform=linux/arm64/v8"
+    extra_files:
+      - entrypoint.sh
 docker_manifests:
   - name_template: "altinity/docker-sync:{{.Version}}"
     image_templates:
