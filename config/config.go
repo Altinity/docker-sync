@@ -12,14 +12,14 @@ var keys = make(map[string]*Key)
 // settings from a specified file, environment variables, or search paths, and
 // listens for changes to dynamically update the configuration.
 func InitConfig(cfgFile string) error {
-	viper.SetEnvPrefix("CHGUARD")
+	viper.SetEnvPrefix("DOCKERSYNC")
 
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
 		viper.SetConfigName("config")
-		viper.AddConfigPath("$HOME/.chguard")
+		viper.AddConfigPath("$HOME/.dockersync")
 		viper.AddConfigPath(".")
 		viper.SetConfigType("yaml")
 	}

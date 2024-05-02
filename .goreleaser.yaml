@@ -53,6 +53,8 @@ dockers:
     dockerfile: Dockerfile
     build_flag_templates:
       - "--platform=linux/amd64"
+    extra_files:
+      - entrypoint.sh
   - image_templates:
       - "altinity/docker-sync:{{.Version}}-arm64v8"
     use: buildx

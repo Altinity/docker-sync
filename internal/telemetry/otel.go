@@ -28,7 +28,7 @@ func Start(ctx context.Context) error {
 		resource.WithContainer(),
 		resource.WithHost(),
 		resource.WithAttributes(
-			attribute.String("service", "chguard"),
+			attribute.String("service", "docker-sync"),
 		),
 	)
 	if err != nil {
@@ -84,7 +84,7 @@ func newMeterProvider(res *resource.Resource) (*metric.MeterProvider, error) {
 
 	switch config.TelemetryMetricsExporter.String() {
 	case "prometheus":
-		exporter, err := prometheus.New(prometheus.WithNamespace("chguard"))
+		exporter, err := prometheus.New(prometheus.WithNamespace("docker-sync"))
 		if err != nil {
 			return nil, err
 		}
