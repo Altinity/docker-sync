@@ -34,7 +34,7 @@ func Run(ctx context.Context) error {
 			default:
 				image := images[k]
 
-				if err := sync.SyncImage(image); err != nil {
+				if err := sync.SyncImage(ctx, image); err != nil {
 					log.Error().
 						Err(err).
 						Str("source", image.Source).

@@ -28,7 +28,7 @@ func Start(ctx context.Context) error {
 		resource.WithContainer(),
 		resource.WithHost(),
 		resource.WithAttributes(
-			attribute.String("service", "docker-sync"),
+			attribute.String("service", "dockersync"),
 		),
 	)
 	if err != nil {
