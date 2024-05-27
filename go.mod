@@ -3,7 +3,7 @@ module github.com/Altinity/docker-sync
 go 1.21.1
 
 require (
-	github.com/aws/aws-sdk-go v1.51.30
+	github.com/aws/aws-sdk-go v1.53.10
 	github.com/google/go-containerregistry v0.19.1
 	github.com/prometheus/client_golang v1.19.0
 	github.com/rs/zerolog v1.32.0
