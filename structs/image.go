@@ -18,7 +18,7 @@ func (i *Image) GetSource() string {
 	return i.Source
 }
 
-func (i *Image) GetTags() ([]string, error) {
+func (i *Image) GetTags(options ...remote.Option) ([]string, error) {
 	tags := i.Tags
 
 	if len(tags) == 0 {
@@ -27,7 +27,7 @@ func (i *Image) GetTags() ([]string, error) {
 			return tags, err
 		}
 
-		return remote.List(repo)
+		return remote.List(repo, options...)
 	}
 
 	return tags, nil
