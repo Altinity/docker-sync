@@ -12,7 +12,7 @@ import (
 	"go.uber.org/multierr"
 )
 
-func SyncTag(image *structs.Image, tag string) error {
+func SyncTag(image *structs.Image, tag string, pullAuthName string, options ...remote.Option) error {
 	var merr error
 
 	expectedPlatforms := image.GetRequiredPlatforms()
@@ -27,8 +27,7 @@ func SyncTag(image *structs.Image, tag string) error {
 		return err
 	}
 
-	pullAuth, pullAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
-	index, err := remote.Index(ref, pullAuth)
+	index, err := remote.Index(ref, options...)
 	if err != nil {
 		if strings.Contains(err.Error(), "unsupported MediaType") {
 			log.Warn().
