@@ -27,6 +27,46 @@ func SyncTag(image *structs.Image, tag string, pullAuthName string, options ...r
 		return err
 	}
 
+	syncTargets := make(map[string]remote.Option)
+	if image.Auths == nil {
+		image.Auths = make(map[string]remote.Option)
+	}
+
+	for _, target := range targets {
+		tref, err := name.ParseReference(fmt.Sprintf("%s:%s", target, tag))
+		if err != nil {
+			merr = multierr.Append(merr, err)
+			continue
+		}
+
+		pushAuth, ok := image.Auths[target]
+		if !ok {
+			pushAuth, _ = getAuth(image.GetRegistry(target), image.GetRepository(target))
+			image.Auths[target] = pushAuth
+		}
+
+		if slices.Contains(image.MutableTags, tag) {
+			syncTargets[target] = pushAuth
+			continue
+		}
+
+		_, err = remote.Index(tref, pushAuth)
+		if err != nil {
+			if strings.Contains(err.Error(), "MANIFEST_UNKNOWN") {
+				syncTargets[target] = pushAuth
+				continue
+			}
+		}
+	}
+
+	if len(syncTargets) == 0 {
+		log.Info().
+			Str("source", image.Source).
+			Str("tag", tag).
+			Msg("Skipping tag sync, all targets are up to date")
+		return nil
+	}
+
 	index, err := remote.Index(ref, options...)
 	if err != nil {
 		if strings.Contains(err.Error(), "unsupported MediaType") {
@@ -61,14 +101,12 @@ func SyncTag(image *structs.Image, tag string, pullAuthName string, options ...r
 		}
 	}
 
-	for _, target := range targets {
+	for target, pushAuth := range syncTargets {
 		tref, err := name.ParseReference(fmt.Sprintf("%s:%s", target, tag))
 		if err != nil {
 			merr = multierr.Append(merr, err)
 			continue
 		}
-
-		pushAuth, pushAuthName := getAuth(image.GetRegistry(target), image.GetRepository(target))
 
 		log.Info().
 			Str("source", image.Source).
@@ -76,7 +114,6 @@ func SyncTag(image *structs.Image, tag string, pullAuthName string, options ...r
 			Strs("requiredPlatforms", expectedPlatforms).
 			Str("target", target).
 			Str("pullAuth", pullAuthName).
-			Str("pushAuth", pushAuthName).
 			Msg("Syncing tag")
 
 		if err := remote.WriteIndex(tref, index, pushAuth); err != nil {
