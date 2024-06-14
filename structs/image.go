@@ -8,10 +8,12 @@ import (
 )
 
 type Image struct {
-	Source            string   `json:"source" yaml:"source"`
-	Tags              []string `json:"tags" yaml:"tags"`
-	Targets           []string `json:"targets" yaml:"targets"`
-	RequiredPlatforms []string `json:"requiredPlatforms" yaml:"requiredPlatforms"`
+	Source            string                   `json:"source" yaml:"source"`
+	Tags              []string                 `json:"tags" yaml:"tags"`
+	Targets           []string                 `json:"targets" yaml:"targets"`
+	RequiredPlatforms []string                 `json:"requiredPlatforms" yaml:"requiredPlatforms"`
+	MutableTags       []string                 `json:"mutableTags" yaml:"mutableTags"`
+	Auths             map[string]remote.Option `json:"-" yaml:"-"`
 }
 
 func (i *Image) GetSource() string {
