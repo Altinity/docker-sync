@@ -13,11 +13,6 @@ var (
 		WithDefaultValue("30m"),
 		WithValidDuration())
 
-	// SyncMinInterval specifies the minimum interval at which images are synchronized if they were already synchronized before.
-	SyncMinInterval = NewKey("sync.minInterval",
-		WithDefaultValue("12h"),
-		WithValidDuration())
-
 	// SyncRegistries specifies the repositories to use for pulling and pushing images.
 	SyncRegistries = NewKey("sync.registries",
 		WithDefaultValue([]map[string]interface{}{
