@@ -2,11 +2,9 @@ package sync
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/cenkalti/backoff/v4"
@@ -15,8 +13,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/multierr"
 )
-
-var lastSyncMap = make(map[string]time.Time)
 
 func SyncImage(ctx context.Context, image *structs.Image) error {
 	var merr error
@@ -29,17 +25,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	}
 
 	for _, tag := range tags {
-		k := fmt.Sprintf("%s:%s", image.Source, tag)
-		if t, ok := lastSyncMap[k]; ok {
-			if time.Since(t) < config.SyncMinInterval.Duration() {
-				log.Info().
-					Str("source", image.GetSource()).
-					Str("tag", tag).
-					Msg("Skipping tag sync due to minimum interval")
-				continue
-			}
-		}
-
 		if err := backoff.Retry(func() error {
 			if err := SyncTag(image, tag, pullAuthName, pullAuth); err != nil {
 				if strings.Contains(err.Error(), "HAP429") {
@@ -78,7 +63,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 				continue
 			}
 		}
-		lastSyncMap[k] = time.Now()
 	}
 
 	return merr
