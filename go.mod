@@ -5,7 +5,7 @@ go 1.21.1
 require (
 	github.com/aws/aws-sdk-go v1.53.19
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/google/go-containerregistry v0.19.1
+	github.com/google/go-containerregistry v0.20.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cast v1.6.0
