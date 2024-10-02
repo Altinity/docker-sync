@@ -31,6 +31,10 @@ func (i *Image) GetRegistry(url string) string {
 		return strings.Join(fields[:2], "/")
 	}
 
+	if len(fields) == 2 {
+		return "docker.io"
+	}
+
 	return fields[0]
 }
 
