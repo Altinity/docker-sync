@@ -1,7 +1,7 @@
 package config
 
 var (
-	// region Sync
+	// region Sync.
 
 	// SyncMaxErrors specifies the maximum number of errors that can occur before the application exits.
 	SyncMaxErrors = NewKey("sync.maxErrors",
@@ -44,5 +44,5 @@ var (
 		}),
 		WithValidImages())
 
-	// endregion
+	// endregion.
 )
