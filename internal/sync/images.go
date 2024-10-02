@@ -27,7 +27,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	for _, tag := range tags {
 		if err := backoff.Retry(func() error {
 			if err := SyncTag(image, tag, pullAuthName, pullAuth); err != nil {
-				if strings.Contains(err.Error(), "HAP429") {
+				if strings.Contains(err.Error(), "HAP429") || strings.Contains(err.Error(), "TOOMANYREQUESTS") {
 					log.Warn().
 						Str("source", image.Source).
 						Msg("Rate limited by registry, backing off")
