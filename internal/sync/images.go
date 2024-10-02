@@ -2,68 +2,233 @@ package sync
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/google/go-containerregistry/pkg/logs"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"go.uber.org/multierr"
+	"golang.org/x/sync/errgroup"
 )
 
+func checkRateLimit(err error) error {
+	if strings.Contains(err.Error(), "HAP429") || strings.Contains(err.Error(), "TOOMANYREQUESTS") {
+		log.Warn().
+			Msg("Rate limited by registry, backing off")
+		return err
+	}
+
+	return backoff.Permanent(err)
+}
+
+func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+	return backoff.Retry(func() error {
+		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+
+		pusher, err := remote.NewPusher(pushAuth)
+		if err != nil {
+			return err
+		}
+
+		dstTag, err := name.ParseReference(fmt.Sprintf("%s:%s", dst, tag))
+		if err != nil {
+			return fmt.Errorf("failed to parse tag: %w", err)
+		}
+
+		logs.Progress.Printf("Pushing %s", dstTag)
+
+		if err := pusher.Push(ctx, dstTag, desc); err != nil {
+			return checkRateLimit(err)
+		}
+
+		return nil
+	}, backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(1*time.Minute),
+	))
+}
+
+func pull(ctx context.Context, puller *remote.Puller, image *structs.Image, tag string) (*remote.Descriptor, error) {
+	srcTag, err := name.ParseReference(fmt.Sprintf("%s:%s", image.Source, tag))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tag: %w", err)
+	}
+
+	var desc *remote.Descriptor
+
+	logs.Progress.Printf("Fetching %s", srcTag)
+
+	if err := backoff.Retry(func() error {
+		desc, err = puller.Get(ctx, srcTag)
+		if err != nil {
+			return checkRateLimit(err)
+		}
+		return nil
+	}, backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(1*time.Minute),
+	)); err != nil {
+		return nil, err
+	}
+
+	return desc, nil
+}
+
 func SyncImage(ctx context.Context, image *structs.Image) error {
-	var merr error
+	log.Info().
+		Str("image", image.Source).
+		Strs("targets", image.Targets).
+		Msg("Syncing image")
 
-	pullAuth, pullAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	pullAuth, _ := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
-	tags, err := image.GetTags(pullAuth)
+	puller, err := remote.NewPuller(pullAuth)
 	if err != nil {
 		return err
 	}
 
-	for _, tag := range tags {
-		if err := backoff.Retry(func() error {
-			if err := SyncTag(image, tag, pullAuthName, pullAuth); err != nil {
-				if strings.Contains(err.Error(), "HAP429") || strings.Contains(err.Error(), "TOOMANYREQUESTS") {
-					log.Warn().
-						Str("source", image.Source).
-						Msg("Rate limited by registry, backing off")
+	srcRepo, err := name.NewRepository(image.Source)
+	if err != nil {
+		return err
+	}
+
+	srcLister, err := puller.Lister(ctx, srcRepo)
+	if err != nil {
+		return err
+	}
+
+	// Get all tags from source
+	log.Info().
+		Str("image", image.Source).
+		Msg("Fetching tags")
+
+	var srcTags []string
+
+	for srcLister.HasNext() {
+		tags, err := srcLister.Next(ctx)
+		if err != nil {
+			return err
+		}
+
+		srcTags = append(srcTags, tags.Tags...)
+	}
+
+	log.Info().
+		Str("image", image.Source).
+		Int("tags", len(srcTags)).
+		Msg("Found tags")
+
+	// Get all tags from targets
+	var dstTags []string
+
+	for _, dst := range image.Targets {
+		log.Info().
+			Str("image", image.Source).
+			Str("target", dst).
+			Msg("Fetching destination tags")
+
+		dstRepo, err := name.NewRepository(dst)
+		if err != nil {
+			return err
+		}
+
+		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+
+		dstPuller, err := remote.NewPuller(pushAuth)
+		if err != nil {
+			return err
+		}
+
+		dstLister, err := dstPuller.Lister(ctx, dstRepo)
+		if err != nil {
+			return err
+		}
+
+		for dstLister.HasNext() {
+			tags, err := dstLister.Next(ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, tag := range tags.Tags {
+				dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, tag))
+			}
+		}
+
+		log.Info().
+			Str("image", image.Source).
+			Str("target", dst).
+			Int("tags", len(dstTags)).
+			Msg("Found destination tags")
+	}
+
+	// Sync tags
+	for _, tag := range srcTags {
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(config.SyncMaxErrors.Int())
+
+		log.Info().
+			Str("image", image.Source).
+			Str("tag", tag).
+			Strs("targets", image.Targets).
+			Msg("Syncing tag")
+
+		if err := func() error {
+			tag := tag
+
+			desc, err := pull(ctx, puller, image, tag)
+			if err != nil {
+				return err
+			}
+
+			for _, dst := range image.Targets {
+				g.Go(func() error {
+					if slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
+						log.Info().
+							Str("image", image.Source).
+							Str("tag", tag).
+							Str("target", dst).
+							Msg("Tag already exists, skipping")
+						return nil
+					}
+					if err := push(ctx, image, desc, dst, tag); err != nil {
+						log.Error().Err(err).Msg("Failed to push tag")
+					}
 					return err
-				}
-
-				return backoff.Permanent(err)
+				})
 			}
 
-			return nil
-		}, backoff.NewExponentialBackOff(
-			backoff.WithInitialInterval(1*time.Minute),
-		)); err != nil {
-			errs := multierr.Errors(err)
-			if len(errs) > 0 {
-				telemetry.Errors.Add(ctx, int64(len(errs)),
-					metric.WithAttributes(
-						attribute.KeyValue{
-							Key:   "image",
-							Value: attribute.StringValue(image.Source),
-						},
-						attribute.KeyValue{
-							Key:   "tag",
-							Value: attribute.StringValue(tag),
-						},
-					),
-				)
-				log.Error().
-					Errs("errors", errs).
-					Msg("Failed to sync tag")
+			return g.Wait()
+		}(); err != nil {
+			log.Error().
+				Err(err).
+				Str("image", image.Source).
+				Str("tag", tag).
+				Msg("Failed to sync tag")
 
-				merr = multierr.Append(merr, err)
-				continue
-			}
+			telemetry.Errors.Add(ctx, 1,
+				metric.WithAttributes(
+					attribute.KeyValue{
+						Key:   "image",
+						Value: attribute.StringValue(image.Source),
+					},
+					attribute.KeyValue{
+						Key:   "tag",
+						Value: attribute.StringValue(tag),
+					},
+				),
+			)
+
+			return err
 		}
 	}
 
-	return merr
+	return nil
 }

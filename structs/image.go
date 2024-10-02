@@ -3,44 +3,21 @@ package structs
 import (
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 type Image struct {
-	Source            string                   `json:"source" yaml:"source"`
-	Tags              []string                 `json:"tags" yaml:"tags"`
-	Targets           []string                 `json:"targets" yaml:"targets"`
-	RequiredPlatforms []string                 `json:"requiredPlatforms" yaml:"requiredPlatforms"`
-	MutableTags       []string                 `json:"mutableTags" yaml:"mutableTags"`
-	Auths             map[string]remote.Option `json:"-" yaml:"-"`
+	Source  string                   `json:"source" yaml:"source"`
+	Targets []string                 `json:"targets" yaml:"targets"`
+	Auths   map[string]remote.Option `json:"-" yaml:"-"`
 }
 
 func (i *Image) GetSource() string {
 	return i.Source
 }
 
-func (i *Image) GetTags(options ...remote.Option) ([]string, error) {
-	tags := i.Tags
-
-	if len(tags) == 0 {
-		repo, err := name.NewRepository(i.Source)
-		if err != nil {
-			return tags, err
-		}
-
-		return remote.List(repo, options...)
-	}
-
-	return tags, nil
-}
-
 func (i *Image) GetTargets() []string {
 	return i.Targets
-}
-
-func (i *Image) GetRequiredPlatforms() []string {
-	return i.RequiredPlatforms
 }
 
 func (i *Image) GetSourceRegistry() string {
