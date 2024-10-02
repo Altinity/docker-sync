@@ -87,7 +87,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		Strs("targets", image.Targets).
 		Msg("Syncing image")
 
-	pullAuth, _ := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	pullAuth, pullAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
 	puller, err := remote.NewPuller(pullAuth)
 	if err != nil {
@@ -107,6 +107,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	// Get all tags from source
 	log.Info().
 		Str("image", image.Source).
+		Str("auth", pullAuthName).
 		Msg("Fetching tags")
 
 	var srcTags []string
@@ -122,6 +123,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	log.Info().
 		Str("image", image.Source).
+		Str("auth", pullAuthName).
 		Int("tags", len(srcTags)).
 		Msg("Found tags")
 
@@ -129,17 +131,18 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	var dstTags []string
 
 	for _, dst := range image.Targets {
-		log.Info().
-			Str("image", image.Source).
-			Str("target", dst).
-			Msg("Fetching destination tags")
-
 		dstRepo, err := name.NewRepository(dst)
 		if err != nil {
 			return err
 		}
 
-		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+		pushAuth, pushAuthName := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+
+		log.Info().
+			Str("image", image.Source).
+			Str("target", dst).
+			Str("auth", pushAuthName).
+			Msg("Fetching destination tags")
 
 		dstPuller, err := remote.NewPuller(pushAuth)
 		if err != nil {
@@ -166,6 +169,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			Str("image", image.Source).
 			Str("target", dst).
 			Int("tags", len(dstTags)).
+			Str("auth", pushAuthName).
 			Msg("Found destination tags")
 	}
 
