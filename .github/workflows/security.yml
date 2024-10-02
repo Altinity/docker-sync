@@ -2,12 +2,12 @@ name: Security Testing
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [opened, synchronize, reopened]
 
 env:
-  GO_VERSION: '1.22.2'
+  GO_VERSION: "1.22.5"
 
 jobs:
   SAST:

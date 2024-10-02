@@ -1,7 +1,7 @@
 package config
 
 var (
-	// region Telemetry
+	// region Telemetry.
 
 	// TelemetryEnabled indicates whether telemetry is enabled.
 	TelemetryEnabled = NewKey("telemetry.enabled",
@@ -13,7 +13,7 @@ var (
 		WithDefaultValue("prometheus"),
 		WithAllowedStrings([]string{"prometheus", "stdout"}))
 
-	// TelemetryMetricsPrometheusAddress specifies the network address for the Prometheus
+	// TelemetryMetricsPrometheusAddress specifies the network address for the Prometheus.
 	TelemetryMetricsPrometheusAddress = NewKey("telemetry.metrics.prometheus.address",
 		WithDefaultValue("127.0.0.1:9090"),
 		WithValidNetHostPort())
@@ -27,5 +27,5 @@ var (
 	TelemetryMetricsStdoutInterval = NewKey("telemetry.metrics.stdout.interval",
 		WithDefaultValue("5s"),
 		WithValidDuration())
-	// endregion
+	// endregion.
 )

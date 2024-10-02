@@ -1,7 +1,7 @@
 package config
 
 var (
-	// region Logging
+	// region Logging.
 
 	// LoggingFormat defines the logging format used for log messages. Allowed values are "json" and "text".
 	LoggingFormat = NewKey("logging.format",
@@ -28,5 +28,5 @@ var (
 	LoggingLevel = NewKey("logging.level",
 		WithDefaultValue("INFO"),
 		WithAllowedStrings([]string{"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL", "PANIC", "DISABLED"}))
-	// endregion
+	// endregion.
 )
