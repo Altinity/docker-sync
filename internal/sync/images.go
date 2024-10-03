@@ -199,7 +199,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			}
 
 			for _, dst := range image.Targets {
-				if slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
+				if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
 					log.Info().
 						Str("image", image.Source).
 						Str("tag", tag).
