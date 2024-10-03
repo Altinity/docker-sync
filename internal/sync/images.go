@@ -208,9 +208,10 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 					return nil
 				}
 				if err := push(ctx, image, desc, dst, tag); err != nil {
-					log.Error().Err(err).Msg("Failed to push tag")
+					return err
 				}
-				return err
+
+				return nil
 			}
 
 			return nil
@@ -231,10 +232,25 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 						Key:   "tag",
 						Value: attribute.StringValue(tag),
 					},
+					attribute.KeyValue{
+						Key:   "error",
+						Value: attribute.StringValue(err.Error()),
+					},
 				),
 			)
-
-			return err
+		} else {
+			telemetry.Syncs.Add(ctx, 1,
+				metric.WithAttributes(
+					attribute.KeyValue{
+						Key:   "image",
+						Value: attribute.StringValue(image.Source),
+					},
+					attribute.KeyValue{
+						Key:   "tag",
+						Value: attribute.StringValue(tag),
+					},
+				),
+			)
 		}
 	}
 

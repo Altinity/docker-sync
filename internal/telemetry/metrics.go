@@ -10,3 +10,7 @@ var meter = otel.Meter("docker-sync")
 var Errors = must(meter.Int64Counter("errors",
 	metric.WithDescription("The total number of errors"),
 ))
+
+var Syncs = must(meter.Int64Counter("syncs",
+	metric.WithDescription("The total number of syncs"),
+))
