@@ -16,7 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"golang.org/x/sync/errgroup"
 )
 
 func checkRateLimit(err error) error {
@@ -99,7 +98,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	pullAuth, pullAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
-	puller, err := remote.NewPuller(pullAuth)
+	srcPuller, err := remote.NewPuller(pullAuth)
 	if err != nil {
 		return err
 	}
@@ -109,7 +108,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		return err
 	}
 
-	srcLister, err := puller.Lister(ctx, srcRepo)
+	srcLister, err := srcPuller.Lister(ctx, srcRepo)
 	if err != nil {
 		return err
 	}
@@ -185,9 +184,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	// Sync tags
 	for _, tag := range srcTags {
-		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(config.SyncMaxErrors.Int())
-
 		log.Info().
 			Str("image", image.Source).
 			Str("tag", tag).
@@ -197,29 +193,27 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		if err := func() error {
 			tag := tag
 
-			desc, err := pull(ctx, puller, image, tag)
+			desc, err := pull(ctx, srcPuller, image, tag)
 			if err != nil {
 				return err
 			}
 
 			for _, dst := range image.Targets {
-				g.Go(func() error {
-					if slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
-						log.Info().
-							Str("image", image.Source).
-							Str("tag", tag).
-							Str("target", dst).
-							Msg("Tag already exists, skipping")
-						return nil
-					}
-					if err := push(ctx, image, desc, dst, tag); err != nil {
-						log.Error().Err(err).Msg("Failed to push tag")
-					}
-					return err
-				})
+				if slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
+					log.Info().
+						Str("image", image.Source).
+						Str("tag", tag).
+						Str("target", dst).
+						Msg("Tag already exists, skipping")
+					return nil
+				}
+				if err := push(ctx, image, desc, dst, tag); err != nil {
+					log.Error().Err(err).Msg("Failed to push tag")
+				}
+				return err
 			}
 
-			return g.Wait()
+			return nil
 		}(); err != nil {
 			log.Error().
 				Err(err).
