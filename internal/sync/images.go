@@ -190,6 +190,19 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			Strs("targets", image.Targets).
 			Msg("Syncing tag")
 
+		telemetry.Errors.Add(ctx, 0,
+			metric.WithAttributes(
+				attribute.KeyValue{
+					Key:   "image",
+					Value: attribute.StringValue(image.Source),
+				},
+				attribute.KeyValue{
+					Key:   "tag",
+					Value: attribute.StringValue(tag),
+				},
+			),
+		)
+
 		if err := func() error {
 			tag := tag
 
