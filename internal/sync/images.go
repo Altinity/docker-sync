@@ -11,7 +11,6 @@ import (
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/google/go-containerregistry/pkg/logs"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/rs/zerolog/log"
@@ -31,7 +30,7 @@ func checkRateLimit(err error) error {
 }
 
 func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
-	return backoff.Retry(func() error {
+	return backoff.RetryNotify(func() error {
 		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
 
 		pusher, err := remote.NewPusher(pushAuth)
@@ -44,16 +43,22 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 			return fmt.Errorf("failed to parse tag: %w", err)
 		}
 
-		logs.Progress.Printf("Pushing %s", dstTag)
-
 		if err := pusher.Push(ctx, dstTag, desc); err != nil {
 			return checkRateLimit(err)
 		}
 
 		return nil
-	}, backoff.NewExponentialBackOff(
+	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(
 		backoff.WithInitialInterval(1*time.Minute),
-	))
+	), config.SyncMaxErrors.UInt64()), func(err error, dur time.Duration) {
+		log.Error().
+			Err(err).
+			Dur("backoff", dur).
+			Str("image", image.Source).
+			Str("tag", tag).
+			Str("target", dst).
+			Msg("Push failed")
+	})
 }
 
 func pull(ctx context.Context, puller *remote.Puller, image *structs.Image, tag string) (*remote.Descriptor, error) {
@@ -64,17 +69,22 @@ func pull(ctx context.Context, puller *remote.Puller, image *structs.Image, tag 
 
 	var desc *remote.Descriptor
 
-	logs.Progress.Printf("Fetching %s", srcTag)
-
-	if err := backoff.Retry(func() error {
+	if err := backoff.RetryNotify(func() error {
 		desc, err = puller.Get(ctx, srcTag)
 		if err != nil {
 			return checkRateLimit(err)
 		}
 		return nil
-	}, backoff.NewExponentialBackOff(
+	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(
 		backoff.WithInitialInterval(1*time.Minute),
-	)); err != nil {
+	), config.SyncMaxErrors.UInt64()), func(err error, dur time.Duration) {
+		log.Error().
+			Err(err).
+			Dur("backoff", dur).
+			Str("image", image.Source).
+			Str("tag", tag).
+			Msg("Pull failed")
+	}); err != nil {
 		return nil, err
 	}
 
