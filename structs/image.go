@@ -7,9 +7,10 @@ import (
 )
 
 type Image struct {
-	Source  string                   `json:"source" yaml:"source"`
-	Targets []string                 `json:"targets" yaml:"targets"`
-	Auths   map[string]remote.Option `json:"-" yaml:"-"`
+	Source      string                   `json:"source" yaml:"source"`
+	Targets     []string                 `json:"targets" yaml:"targets"`
+	MutableTags []string                 `json:"mutableTags" yaml:"mutableTags"`
+	Auths       map[string]remote.Option `json:"-" yaml:"-"`
 }
 
 func (i *Image) GetSource() string {

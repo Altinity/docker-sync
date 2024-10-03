@@ -37,6 +37,9 @@ var (
 				"targets": []string{
 					"docker.io/library/ubuntu",
 				},
+				"mutableTags": []string{
+					"latest",
+				},
 			},
 		}),
 		WithValidImages())
