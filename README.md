@@ -183,6 +183,7 @@ Use the Cloudflare UI to create the rules by going to Rules > Transform Rules.
 
 Create a **Rewrite URL** rule.
 
+```
 **If incoming requests match...**: Custom filter expression
 
 **URI Path**: `equals` `/v2/`
@@ -190,11 +191,13 @@ Create a **Rewrite URL** rule.
 **Expression Preview**: `(http.request.uri.path eq "/v2/")` (optionally also add your hostname for a better match)
 
 **Then...**: Path > Rewrite to... > Static > `/v2` (without the trailing slash)
+```
 
 ##### V2 Ping Fix - /v2/ requires `Docker-Distribution-API-Version` header
 
 Create a **Modify Response Header** rule.
 
+```
 **If incoming requests match...**: Custom filter expression
 
 **URI Path**: `starts with` `/v2/`
@@ -202,6 +205,7 @@ Create a **Modify Response Header** rule.
 **Expression Preview**: `(starts_with(http.request.uri.path, "/v2"))` (optionally also add your hostname for a better match)
 
 **Then...**: Set static > `Docker-Distribution-API-Version` > `registry/2.0`
+```
 
 #### S3 (target only)
 
