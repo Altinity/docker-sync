@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -162,7 +165,35 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	for _, dst := range image.Targets {
 		if strings.HasPrefix(dst, "r2:") || strings.HasPrefix(dst, "s3:") {
-			// Comparison is performed during push
+			var s3Session *s3.S3
+			var bucket *string
+			var err error
+
+			if strings.HasPrefix(dst, "r2:") {
+				s3Session, bucket, err = getR2Session(dst)
+			}
+			if strings.HasPrefix(dst, "s3:") {
+				s3Session, bucket, err = getS3Session(dst)
+			}
+			if err != nil {
+				return err
+			}
+
+			s3Lister, err := s3Session.ListObjectsV2(&s3.ListObjectsV2Input{
+				Bucket: bucket,
+				Prefix: aws.String(filepath.Join("v2", image.GetSourceRepository(), "manifests")),
+			})
+			if err != nil {
+				return err
+			}
+
+			for _, obj := range s3Lister.Contents {
+				fname := filepath.Base(*obj.Key)
+				if !strings.HasPrefix(fname, "sha256:") {
+					dstTags = append(dstTags, fname)
+				}
+			}
+
 			continue
 		}
 

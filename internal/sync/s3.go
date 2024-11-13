@@ -3,7 +3,7 @@ package sync
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,7 +71,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		"v2",
 		acl,
 		aws.String("application/json"),
-		bytes.NewReader([]byte{}), // No content is needed, we just need to return a 200.
+		bytes.NewReader([]byte("{}")), // No content is needed, we just need to return a 200.
 	); err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		ctx,
 		s3Session,
 		bucket,
-		filepath.Join(baseDir, "manifests", tag),
+		filepath.Join(baseDir, "manifests", desc.Digest.String()),
 		acl,
 		mediaType,
 		bytes.NewReader(manifest),
@@ -176,11 +176,12 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		return err
 	}
 
+	// Tag is added last so it can be used to check for duplication.
 	if err := syncObject(
 		ctx,
 		s3Session,
 		bucket,
-		filepath.Join(baseDir, "manifests", desc.Digest.String()),
+		manifestKey(image, tag),
 		acl,
 		mediaType,
 		bytes.NewReader(manifest),
@@ -191,15 +192,19 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	return nil
 }
 
-func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
-	// FIXME: we are reading the object every time to calculate the digest. This is inefficient.
-	h := sha256.New()
-	if _, err := io.Copy(h, r); err != nil {
-		return err
+func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, error) {
+	_, err := s3Session.HeadObject(&s3.HeadObjectInput{
+		Bucket: bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return false, err
 	}
-	calculatedDigest := fmt.Sprintf("sha256:%x", h.Sum(nil))
-	r.Seek(0, io.SeekStart)
 
+	return true, nil
+}
+
+func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
 		Key:    &key,
@@ -210,13 +215,32 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 		}
 	}
 
-	headMetadataDigest, digestPresent := head.Metadata["X-Calculated-Digest"]
+	// We store the digest as metadata so we can compare with the ETag without having to download the object.
+	headMetadataDigestPtr, digestPresent := head.Metadata["X-Calculated-Digest"]
+	var headMetadataDigest string
+	if digestPresent {
+		headMetadataDigest = *headMetadataDigestPtr
+	}
+
+	var etag string
+	if head != nil && head.ETag != nil {
+		etag = strings.ReplaceAll(*head.ETag, `"`, "")
+	}
 
 	if head == nil ||
 		head.ContentType == nil ||
 		*head.ContentType != *contentType ||
 		!digestPresent ||
-		*headMetadataDigest != calculatedDigest {
+		headMetadataDigest != etag {
+
+		r.Seek(0, io.SeekStart)
+		h := md5.New()
+		if _, err := io.Copy(h, r); err != nil {
+			return err
+		}
+		calculatedDigest := fmt.Sprintf("%x", h.Sum(nil))
+		r.Seek(0, io.SeekStart)
+
 		log.Info().
 			Str("bucket", *bucket).
 			Str("key", key).
@@ -238,4 +262,8 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 	}
 
 	return nil
+}
+
+func manifestKey(image *structs.Image, tag string) string {
+	return filepath.Join("v2", image.GetSourceRepository(), "manifests", tag)
 }
