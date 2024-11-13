@@ -86,7 +86,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	if err == nil {
 		cnfHash, err := i.ConfigName()
 		if err == nil {
-
 			if err := syncObject(
 				ctx,
 				s3Session,
