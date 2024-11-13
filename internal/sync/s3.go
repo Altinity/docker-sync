@@ -209,7 +209,7 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 		}
 	}
 
-	headMetadataDigest, digestPresent := head.Metadata["calculatedDigest"]
+	headMetadataDigest, digestPresent := head.Metadata["X-Calculated-Digest"]
 
 	if head == nil ||
 		head.ContentType == nil ||
@@ -229,7 +229,7 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 			ACL:         acl,
 			ContentType: contentType,
 			Metadata: map[string]*string{
-				"calculatedDigest": aws.String(calculatedDigest),
+				"X-Calculated-Digest": aws.String(calculatedDigest),
 			},
 		}); err != nil {
 			return err
