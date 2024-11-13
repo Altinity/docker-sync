@@ -146,7 +146,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	var dstTags []string
 
 	for _, dst := range image.Targets {
-		if strings.HasPrefix(dst, "r2:") {
+		if strings.HasPrefix(dst, "r2:") || strings.HasPrefix(dst, "s3:") {
 			// Comparison is performed during push
 			continue
 		}
