@@ -43,6 +43,12 @@ func (i *Image) GetSourceRepository() string {
 	return i.GetRepository(i.Source)
 }
 
+func (i *Image) GetName() string {
+	fields := strings.Split(i.Source, "/")
+
+	return fields[len(fields)-1]
+}
+
 func (i *Image) GetRepository(url string) string {
 	fields := strings.Split(url, "/")
 

@@ -152,3 +152,71 @@ sync:
       name: GCR / GAR
       url: gcr.io
 ```
+
+#### R2 (target only)
+
+```yaml
+sync:
+    images:
+        - source: docker.io/library/ubuntu
+          targets:
+            - r2:f6934f56ce237241104dbe9302cee786:docker-sync-test:ubuntu # r2:<endpoint>:<bucket>:<image>
+      registries:
+            - auth:
+                helper: "" 
+                password: "SECRET_ACCES_KEY"
+                token: ""
+                username: "ACCESS_KEY_ID"
+              name: R2
+              url: r2:f6934f56ce237241104dbe9302cee786:docker-sync-test # r2:<endpoint>:<bucket>
+```
+
+Note that pulls should be performed against the bucket's public url. Check [the docs](https://developers.cloudflare.com/r2/buckets/public-buckets/#enable-managed-public-access) for more information.
+
+Don't use the standard `r2.dev` domain, as some rules need to be created and they won't work without a custom domain.
+
+To match the [official spec](https://github.com/openshift/docker-distribution/blob/master/docs/spec/api.md#api-version-check), some rules need to be created.
+
+Use the Cloudflare UI to create the rules by going to Rules > Transform Rules.
+
+##### V2 Ping Fix - /v2/ requires `200 OK`
+
+Create a **Rewrite URL** rule.
+
+**If incoming requests match...**: Custom filter expression
+
+**URI Path**: `equals` `/v2/`
+
+**Expression Preview**: `(http.request.uri.path eq "/v2/")` (optionally also add your hostname for a better match)
+
+**Then...**: Path > Rewrite to... > Static > `/v2` (without the trailing slash)
+
+##### V2 Ping Fix - /v2/ requires `Docker-Distribution-API-Version` header
+
+Create a **Modify Response Header** rule.
+
+**If incoming requests match...**: Custom filter expression
+
+**URI Path**: `starts with` `/v2/`
+
+**Expression Preview**: `(starts_with(http.request.uri.path, "/v2"))` (optionally also add your hostname for a better match)
+
+**Then...**: Set static > `Docker-Distribution-API-Version` > `registry/2.0`
+
+#### S3 (target only)
+
+```yaml
+sync:
+    images:
+        - source: docker.io/library/ubuntu
+          targets:
+            - r3:us-east-1:docker-sync-test:ubuntu # s3:<region>:<bucket>:<image>
+      registries:
+            - auth:
+                helper: "" 
+                password: "SECRET_ACCES_KEY"
+                token: ""
+                username: "ACCESS_KEY_ID"
+              name: S3
+              url: s3:us-east-1:docker-sync-test # s3:<region>:<bucket>
+```
