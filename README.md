@@ -25,6 +25,15 @@ Build the project:
 ```console
 make
 ```
+To run a one-off synchronization, you can run `dist/dockersync sync`.
+
+``` sh
+dist/dockersync --source docker.io/library/ubuntu --targets r2:blablabla:docker-sync-test:ubuntu --url1 docker.io --username1 foo --password1 bar --url2 r2:blablabla:docker-sync-test --username2 foo --password2 bar
+```
+
+Run `dist/dockersync sync --help` for more configuration options.
+
+## Configuration
 
 Write the default config file:
 
@@ -37,8 +46,6 @@ Edit the config file accordingly, then run:
 ```console
 dist/dockersync
 ```
-
-## Configuration
 
 The default configuration looks like this: 
 

@@ -18,11 +18,13 @@ func Reload() {
 					Msg("Failed to load configuration key, ignoring")
 			} else if reloadedKeys[k].OldValue != nil {
 				// Skip logging if the key was not previously set (i.e. it was loaded for the first time)
-				log.Info().
-					Str("key", reloadedKeys[k].Key).
-					Interface("oldValue", reloadedKeys[k].OldValue).
-					Interface("newValue", reloadedKeys[k].NewValue).
-					Msg("Loaded configuration key")
+				/*
+					  log.Info().
+						Str("key", reloadedKeys[k].Key).
+						Interface("oldValue", reloadedKeys[k].OldValue).
+						Interface("newValue", reloadedKeys[k].NewValue).
+						Msg("Loaded configuration key")
+				*/
 			}
 		}
 	}
