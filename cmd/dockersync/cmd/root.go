@@ -60,6 +60,8 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	initConfig()
+
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
@@ -67,8 +69,6 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
-
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is config.yaml)")
 }
 
