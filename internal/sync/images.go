@@ -37,7 +37,7 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 		if strings.HasPrefix(dst, "r2:") {
 			if err := pushR2(ctx, image, desc, dst, tag); err != nil {
 				if errors.Is(err, remote.ErrSchema1) {
-					return backoff.Permanent(err)
+					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
 				}
 				return err
 			}
@@ -47,7 +47,7 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 		if strings.HasPrefix(dst, "s3:") {
 			if err := pushS3(ctx, image, desc, dst, tag); err != nil {
 				if errors.Is(err, remote.ErrSchema1) {
-					return backoff.Permanent(err)
+					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
 				}
 				return err
 			}
