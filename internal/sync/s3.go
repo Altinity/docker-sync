@@ -82,25 +82,23 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	}
 
 	cnf, err := i.RawConfigFile()
-	if err != nil {
-		return err
-	}
+	// Config is optional, so we don't return an error if it's not found.
+	if err == nil {
+		cnfHash, err := i.ConfigName()
+		if err == nil {
 
-	cnfHash, err := i.ConfigName()
-	if err != nil {
-		return err
-	}
-
-	if err := syncObject(
-		ctx,
-		s3Session,
-		bucket,
-		filepath.Join(baseDir, "blobs", cnfHash.String()),
-		acl,
-		aws.String("application/vnd.docker.container.image.v1+json"),
-		cnf,
-	); err != nil {
-		return err
+			if err := syncObject(
+				ctx,
+				s3Session,
+				bucket,
+				filepath.Join(baseDir, "blobs", cnfHash.String()),
+				acl,
+				aws.String("application/vnd.docker.container.image.v1+json"),
+				cnf,
+			); err != nil {
+				return err
+			}
+		}
 	}
 
 	l, err := i.Layers()
