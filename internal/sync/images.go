@@ -32,7 +32,9 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 	return backoff.RetryNotify(func() error {
 		if strings.HasPrefix(dst, "r2:") {
 			return pushR2(ctx, image, desc, dst, tag)
-		} else if strings.HasPrefix(dst, "s3:") {
+		}
+
+		if strings.HasPrefix(dst, "s3:") {
 			return pushS3(ctx, image, desc, dst, tag)
 		}
 
