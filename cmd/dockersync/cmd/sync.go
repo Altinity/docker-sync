@@ -187,23 +187,23 @@ func init() {
 
 	syncCmd.Flags().StringP("ecr-region", "", os.Getenv("AWS_REGION"), "AWS region for ECR")
 
-	syncCmd.Flags().StringP("helper1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_HELPER"), "First registry helper for target image")
-	syncCmd.Flags().StringP("password1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_PASSWORD"), "First registry password for target image")
-	syncCmd.Flags().StringP("token1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_TOKEN"), "First registry token for target image")
-	syncCmd.Flags().StringP("username1", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_1_USERNAME"), "", "First registry username for target image")
-	syncCmd.Flags().StringP("url1", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_1_URL"), "First registry URL for target image")
+	syncCmd.Flags().StringP("helper1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_HELPER"), "First registry helper")
+	syncCmd.Flags().StringP("password1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_PASSWORD"), "First registry password")
+	syncCmd.Flags().StringP("token1", "", os.Getenv("DOCKER_SYNC_REGISTRY_1_TOKEN"), "First registry token")
+	syncCmd.Flags().StringP("username1", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_1_USERNAME"), "", "First registry username")
+	syncCmd.Flags().StringP("url1", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_1_URL"), "First registry URL")
 
-	syncCmd.Flags().StringP("helper2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_HELPER"), "Second registry helper for target image")
-	syncCmd.Flags().StringP("password2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_PASSWORD"), "Second registry password for target image")
-	syncCmd.Flags().StringP("token2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_TOKEN"), "Second registry token for target image")
-	syncCmd.Flags().StringP("username2", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_2_USERNAME"), "", "Second registry username for target image")
-	syncCmd.Flags().StringP("url2", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_2_URL"), "Second registry URL for target image")
+	syncCmd.Flags().StringP("helper2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_HELPER"), "Second registry helper")
+	syncCmd.Flags().StringP("password2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_PASSWORD"), "Second registry password")
+	syncCmd.Flags().StringP("token2", "", os.Getenv("DOCKER_SYNC_REGISTRY_2_TOKEN"), "Second registry token")
+	syncCmd.Flags().StringP("username2", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_2_USERNAME"), "", "Second registry username")
+	syncCmd.Flags().StringP("url2", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_2_URL"), "Second registry URL")
 
-	syncCmd.Flags().StringP("helper3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_HELPER"), "Third registry helper for target image")
-	syncCmd.Flags().StringP("password3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_PASSWORD"), "Third registry password for target image")
-	syncCmd.Flags().StringP("token3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_TOKEN"), "Third registry token for target image")
-	syncCmd.Flags().StringP("username3", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_3_USERNAME"), "", "Third registry username for target image")
-	syncCmd.Flags().StringP("url3", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_3_URL"), "Third registry URL for target image")
+	syncCmd.Flags().StringP("helper3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_HELPER"), "Third registry helper")
+	syncCmd.Flags().StringP("password3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_PASSWORD"), "Third registry password")
+	syncCmd.Flags().StringP("token3", "", os.Getenv("DOCKER_SYNC_REGISTRY_3_TOKEN"), "Third registry token")
+	syncCmd.Flags().StringP("username3", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_3_USERNAME"), "", "Third registry username")
+	syncCmd.Flags().StringP("url3", "", os.Getenv("DOCKER_SYNC_TARGET_REGISTRY_3_URL"), "Third registry URL")
 
 	// For more registries, please use a configuration file
 }
