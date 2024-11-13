@@ -192,6 +192,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 }
 
 func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
+	// FIXME: we are reading the object every time to calculate the digest. This is inefficient.
 	h := sha256.New()
 	if _, err := io.Copy(h, r); err != nil {
 		return err
