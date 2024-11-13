@@ -41,7 +41,7 @@ func getS3Session(url string) (*s3.S3, *string, error) {
 		Region:           region,
 		S3ForcePathStyle: aws.Bool(true),
 		HTTPClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 300 * time.Second, // Some blobs are huge
 		},
 	})
 	if err != nil {
@@ -141,7 +141,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 			if _, err := io.Copy(tmpFile, r); err != nil {
 				return err
 			}
-			tmpFile.Seek(0, io.SeekStart)
 
 			if err := syncObject(
 				ctx,

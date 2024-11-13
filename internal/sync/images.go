@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -31,11 +32,23 @@ func checkRateLimit(err error) error {
 func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
 		if strings.HasPrefix(dst, "r2:") {
-			return pushR2(ctx, image, desc, dst, tag)
+			if err := pushR2(ctx, image, desc, dst, tag); err != nil {
+				if errors.Is(err, remote.ErrSchema1) {
+					return backoff.Permanent(err)
+				}
+				return err
+			}
+			return nil
 		}
 
 		if strings.HasPrefix(dst, "s3:") {
-			return pushS3(ctx, image, desc, dst, tag)
+			if err := pushS3(ctx, image, desc, dst, tag); err != nil {
+				if errors.Is(err, remote.ErrSchema1) {
+					return backoff.Permanent(err)
+				}
+				return err
+			}
+			return nil
 		}
 
 		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
