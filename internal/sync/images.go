@@ -30,6 +30,12 @@ func checkRateLimit(err error) error {
 
 func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
+		if strings.HasPrefix(dst, "r2:") {
+			return pushR2(ctx, image, desc, dst, tag)
+		} else if strings.HasPrefix(dst, "s3:") {
+			return pushS3(ctx, image, desc, dst, tag)
+		}
+
 		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
 
 		pusher, err := remote.NewPusher(pushAuth)
@@ -140,6 +146,11 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	var dstTags []string
 
 	for _, dst := range image.Targets {
+		if strings.HasPrefix(dst, "r2:") {
+			// Comparison is performed during push
+			continue
+		}
+
 		dstRepo, err := name.NewRepository(dst)
 		if err != nil {
 			return err
