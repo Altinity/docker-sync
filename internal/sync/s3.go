@@ -3,9 +3,11 @@ package sync
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -69,12 +71,12 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		"v2",
 		acl,
 		aws.String("application/json"),
-		[]byte{}, // No content is needed, we just need to return a 200.
+		bytes.NewReader([]byte{}), // No content is needed, we just need to return a 200.
 	); err != nil {
 		return err
 	}
 
-	baseDir := filepath.Join("v2", image.GetName())
+	baseDir := filepath.Join("v2", image.GetSourceRepository())
 
 	i, err := desc.Image()
 	if err != nil {
@@ -93,7 +95,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 				filepath.Join(baseDir, "blobs", cnfHash.String()),
 				acl,
 				aws.String("application/vnd.docker.container.image.v1+json"),
-				cnf,
+				bytes.NewReader(cnf),
 			); err != nil {
 				return err
 			}
@@ -105,46 +107,56 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		return err
 	}
 
+	// Blobs can be huge and we need a io.ReadSeeker, so we can't read them all into memory.
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "docker-sync")
+	if err != nil {
+		return err
+	}
+
 	// Layers are synced first to avoid making a tag available before all its blobs are available.
 	for _, layer := range l {
-		digest, err := layer.Digest()
-		if err != nil {
-			return err
-		}
-
-		mediaType, err := layer.MediaType()
-		if err != nil {
-			return err
-		}
-
-		var r io.ReadCloser
-
-		if strings.HasSuffix(string(mediaType), ".gzip") {
-			r, err = layer.Compressed()
+		if err := func() error {
+			digest, err := layer.Digest()
 			if err != nil {
 				return err
 			}
-		} else {
-			r, err = layer.Uncompressed()
+
+			mediaType, err := layer.MediaType()
 			if err != nil {
 				return err
 			}
-		}
 
-		b, err := io.ReadAll(r)
-		if err != nil {
-			return err
-		}
+			r, err := layer.Compressed()
+			if err != nil {
+				return err
+			}
 
-		if err := syncObject(
-			ctx,
-			s3Session,
-			bucket,
-			filepath.Join(baseDir, "blobs", digest.String()),
-			acl,
-			aws.String(string(mediaType)),
-			b,
-		); err != nil {
+			tmpFile, err := os.Create(filepath.Join(tmpDir, "blob"))
+			if err != nil {
+				return err
+			}
+			defer os.Remove(tmpFile.Name())
+			defer tmpFile.Close()
+
+			if _, err := io.Copy(tmpFile, r); err != nil {
+				return err
+			}
+			tmpFile.Seek(0, io.SeekStart)
+
+			if err := syncObject(
+				ctx,
+				s3Session,
+				bucket,
+				filepath.Join(baseDir, "blobs", digest.String()),
+				acl,
+				aws.String(string(mediaType)),
+				tmpFile,
+			); err != nil {
+				return err
+			}
+
+			return nil
+		}(); err != nil {
 			return err
 		}
 	}
@@ -160,7 +172,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		filepath.Join(baseDir, "manifests", tag),
 		acl,
 		mediaType,
-		manifest,
+		bytes.NewReader(manifest),
 	); err != nil {
 		return err
 	}
@@ -172,7 +184,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		filepath.Join(baseDir, "manifests", desc.Digest.String()),
 		acl,
 		mediaType,
-		manifest,
+		bytes.NewReader(manifest),
 	); err != nil {
 		return err
 	}
@@ -180,7 +192,14 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	return nil
 }
 
-func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, b []byte) error {
+func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return err
+	}
+	calculatedDigest := fmt.Sprintf("sha256:%x", h.Sum(nil))
+	r.Seek(0, io.SeekStart)
+
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
 		Key:    &key,
@@ -191,24 +210,28 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 		}
 	}
 
+	headMetadataDigest, digestPresent := head.Metadata["calculatedDigest"]
+
 	if head == nil ||
-		head.ContentLength == nil ||
-		*head.ContentLength != int64(len(b)) ||
 		head.ContentType == nil ||
-		*head.ContentType != *contentType {
+		*head.ContentType != *contentType ||
+		!digestPresent ||
+		*headMetadataDigest != calculatedDigest {
 		log.Info().
 			Str("bucket", *bucket).
 			Str("key", key).
 			Str("contentType", *contentType).
-			Int64("contentLength", int64(len(b))).
 			Msg("Syncing object")
 
 		if _, err := s3Session.PutObject(&s3.PutObjectInput{
 			Bucket:      bucket,
 			Key:         &key,
-			Body:        bytes.NewReader(b),
+			Body:        r,
 			ACL:         acl,
 			ContentType: contentType,
+			Metadata: map[string]*string{
+				"calculatedDigest": aws.String(calculatedDigest),
+			},
 		}); err != nil {
 			return err
 		}
