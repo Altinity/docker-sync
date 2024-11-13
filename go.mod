@@ -5,7 +5,7 @@ go 1.22.6
 toolchain go1.23.3
 
 require (
-	github.com/aws/aws-sdk-go v1.53.19
+	github.com/aws/aws-sdk-go v1.55.5
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/google/go-containerregistry v0.20.2
 	github.com/prometheus/client_golang v1.20.2
