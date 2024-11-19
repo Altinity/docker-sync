@@ -50,5 +50,5 @@ func pushR2(ctx context.Context, image *structs.Image, desc *remote.Descriptor, 
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, image, desc, dst, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, image, desc, tag)
 }

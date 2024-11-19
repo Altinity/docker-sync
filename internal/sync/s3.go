@@ -57,10 +57,10 @@ func pushS3(ctx context.Context, image *structs.Image, desc *remote.Descriptor, 
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, image, desc, dst, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, image, desc, tag)
 }
 
-func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, image *structs.Image, desc *remote.Descriptor, tag string) error {
 	acl := aws.String("public-read")
 
 	// FIXME: this only needs to be called once per bucket
