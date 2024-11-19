@@ -275,13 +275,13 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 						Str("tag", tag).
 						Str("target", dst).
 						Msg("Tag already exists, skipping")
-					return nil
+
+					continue
 				}
+
 				if err := push(ctx, image, desc, dst, tag); err != nil {
 					return err
 				}
-
-				return nil
 			}
 
 			return nil
