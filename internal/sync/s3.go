@@ -192,18 +192,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	return nil
 }
 
-func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, error) {
-	_, err := s3Session.HeadObject(&s3.HeadObjectInput{
-		Bucket: bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
 func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
@@ -216,10 +204,15 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 	}
 
 	// We store the digest as metadata so we can compare with the ETag without having to download the object.
-	headMetadataDigestPtr, digestPresent := head.Metadata["X-Calculated-Digest"]
 	var headMetadataDigest string
-	if digestPresent {
-		headMetadataDigest = *headMetadataDigestPtr
+	var digestPresent bool
+	var headMetadataDigestPtr *string
+
+	if head.Metadata != nil {
+		headMetadataDigestPtr, digestPresent = head.Metadata["X-Calculated-Digest"]
+		if digestPresent {
+			headMetadataDigest = *headMetadataDigestPtr
+		}
 	}
 
 	var etag string
