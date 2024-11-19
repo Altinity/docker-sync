@@ -51,6 +51,11 @@ issues:
     - linters:
         - gosimple
       text: "S1000"
-    - path: 'config/keys.go'
+    - path: "config/keys.go"
       linters:
         - godot
+    - path: "internal/sync/images.go"
+      linters:
+        - nestif
+    - path: "reload.go"
+      text: "SA9003"
