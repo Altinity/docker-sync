@@ -121,10 +121,10 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 
 			key := filepath.Join(baseDir, "blobs", digest.String())
 
-			exists, etag, err := s3ObjectExists(s3Session, bucket, key)
+			exists, _, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
 			if err != nil {
 				return err
-			} else if exists && fmt.Sprintf("sha256:%s", etag) == digest.String() {
+			} else if exists && fmt.Sprintf("sha256:%s", headMetadataDigest) == digest.String() {
 				return nil
 			}
 
@@ -197,23 +197,14 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 }
 
 func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
-	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
-		Bucket: bucket,
-		Key:    aws.String(key),
-	})
+	_, _, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
 	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
-			return err
-		}
-	}
-
-	var etag string
-	if head != nil && head.ETag != nil {
-		etag = strings.ReplaceAll(*head.ETag, `"`, "")
+		return err
 	}
 
 	var calculatedDigest string
 
+	// If we are uploading a blob, trust it's digest
 	fname := path.Base(key)
 	if strings.HasPrefix(fname, "sha256:") {
 		fields := strings.Split(fname, ":")
@@ -232,11 +223,7 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 		r.Seek(0, io.SeekStart)
 	}
 
-	if head == nil ||
-		head.ContentType == nil ||
-		*head.ContentType != *contentType ||
-		calculatedDigest != etag {
-
+	if calculatedDigest != headMetadataDigest {
 		log.Info().
 			Str("bucket", *bucket).
 			Str("key", key).
@@ -249,6 +236,9 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 			Body:        r,
 			ACL:         acl,
 			ContentType: contentType,
+			Metadata: map[string]*string{
+				"X-Calculated-Digest": aws.String(calculatedDigest),
+			},
 		}); err != nil {
 			return err
 		}
@@ -261,16 +251,16 @@ func manifestKey(image *structs.Image, tag string) string {
 	return filepath.Join("v2", image.GetSourceRepository(), "manifests", tag)
 }
 
-func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, error) {
+func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, string, error) {
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
 		Key:    &key,
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
-			return false, "", err
+			return false, "", "", err
 		}
-		return false, "", nil
+		return false, "", "", nil
 	}
 
 	var etag string
@@ -278,5 +268,14 @@ func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string,
 		etag = strings.ReplaceAll(*head.ETag, `"`, "")
 	}
 
-	return true, etag, nil
+	// R2 only supports MD5, so we need to check the custom X-Calculated-Digest metadata for the SHA256 hash
+	var headMetadataDigest string
+	if head != nil && head.Metadata != nil {
+		headMetadataDigestPtr, digestPresent := head.Metadata["X-Calculated-Digest"]
+		if digestPresent {
+			headMetadataDigest = *headMetadataDigestPtr
+		}
+	}
+
+	return true, etag, headMetadataDigest, nil
 }
