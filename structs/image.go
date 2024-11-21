@@ -1,6 +1,7 @@
 package structs
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -40,7 +41,9 @@ func (i *Image) GetRegistry(url string) string {
 }
 
 func (i *Image) GetSourceRepository() string {
-	return i.GetRepository(i.Source)
+	x := i.GetRepository(i.Source)
+	fmt.Println(x)
+	return x
 }
 
 func (i *Image) GetName() string {
@@ -50,10 +53,23 @@ func (i *Image) GetName() string {
 }
 
 func (i *Image) GetRepository(url string) string {
+	if strings.HasPrefix(url, "r2:") || strings.HasPrefix(url, "s3:") {
+		fields := strings.Split(url, ":")
+		if len(fields) > 3 {
+			return strings.Join(fields[3:], ":")
+		}
+	}
+
 	fields := strings.Split(url, "/")
+	// Omitted docker.io
+	if len(fields) == 2 {
+		return url
+	}
 
 	if strings.HasPrefix(url, "public.ecr.aws") {
-		return strings.Join(fields[2:], "/")
+		if len(fields) > 2 {
+			return strings.Join(fields[2:], "/")
+		}
 	}
 
 	return strings.Join(fields[1:], "/")
