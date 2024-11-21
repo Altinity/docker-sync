@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -44,11 +43,11 @@ func getR2Session(url string) (*s3.S3, *string, error) {
 	return s3.New(newSession), bucket, nil
 }
 
-func pushR2(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+func pushR2(image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	s3Session, bucket, err := getR2Session(dst)
 	if err != nil {
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, image, desc, tag)
+	return pushS3WithSession(s3Session, bucket, image, desc, tag)
 }

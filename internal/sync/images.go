@@ -35,7 +35,7 @@ func checkRateLimit(err error) error {
 func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
 		if strings.HasPrefix(dst, "r2:") {
-			if err := pushR2(ctx, image, desc, dst, tag); err != nil {
+			if err := pushR2(image, desc, dst, tag); err != nil {
 				if errors.Is(err, remote.ErrSchema1) {
 					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
 				}
@@ -45,7 +45,7 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 		}
 
 		if strings.HasPrefix(dst, "s3:") {
-			if err := pushS3(ctx, image, desc, dst, tag); err != nil {
+			if err := pushS3(image, desc, dst, tag); err != nil {
 				if errors.Is(err, remote.ErrSchema1) {
 					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
 				}

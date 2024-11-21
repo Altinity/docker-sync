@@ -2,12 +2,12 @@ package sync
 
 import (
 	"bytes"
-	"context"
 	"crypto/md5"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -51,21 +51,20 @@ func getS3Session(url string) (*s3.S3, *string, error) {
 	return s3.New(newSession), bucket, nil
 }
 
-func pushS3(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+func pushS3(image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	s3Session, bucket, err := getS3Session(dst)
 	if err != nil {
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, image, desc, tag)
+	return pushS3WithSession(s3Session, bucket, image, desc, tag)
 }
 
-func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, image *structs.Image, desc *remote.Descriptor, tag string) error {
+func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, desc *remote.Descriptor, tag string) error {
 	acl := aws.String("public-read")
 
 	// FIXME: this only needs to be called once per bucket
 	if err := syncObject(
-		ctx,
 		s3Session,
 		bucket,
 		"v2",
@@ -89,7 +88,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 		cnfHash, err := i.ConfigName()
 		if err == nil {
 			if err := syncObject(
-				ctx,
 				s3Session,
 				bucket,
 				filepath.Join(baseDir, "blobs", cnfHash.String()),
@@ -121,6 +119,15 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 				return err
 			}
 
+			key := filepath.Join(baseDir, "blobs", digest.String())
+
+			exists, etag, err := s3ObjectExists(s3Session, bucket, key)
+			if err != nil {
+				return err
+			} else if exists && fmt.Sprintf("sha256:%s", etag) == digest.String() {
+				return nil
+			}
+
 			mediaType, err := layer.MediaType()
 			if err != nil {
 				return err
@@ -143,10 +150,9 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 			}
 
 			if err := syncObject(
-				ctx,
 				s3Session,
 				bucket,
-				filepath.Join(baseDir, "blobs", digest.String()),
+				key,
 				acl,
 				aws.String(string(mediaType)),
 				tmpFile,
@@ -165,7 +171,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	manifest := desc.Manifest
 
 	if err := syncObject(
-		ctx,
 		s3Session,
 		bucket,
 		filepath.Join(baseDir, "manifests", desc.Digest.String()),
@@ -178,7 +183,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 
 	// Tag is added last so it can be used to check for duplication.
 	if err := syncObject(
-		ctx,
 		s3Session,
 		bucket,
 		manifestKey(image, tag),
@@ -192,26 +196,14 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, im
 	return nil
 }
 
-func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
+func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
-		Key:    &key,
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
 			return err
-		}
-	}
-
-	// We store the digest as metadata so we can compare with the ETag without having to download the object.
-	var headMetadataDigest string
-	var digestPresent bool
-	var headMetadataDigestPtr *string
-
-	if head.Metadata != nil {
-		headMetadataDigestPtr, digestPresent = head.Metadata["X-Calculated-Digest"]
-		if digestPresent {
-			headMetadataDigest = *headMetadataDigestPtr
 		}
 	}
 
@@ -220,19 +212,30 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 		etag = strings.ReplaceAll(*head.ETag, `"`, "")
 	}
 
-	if head == nil ||
-		head.ContentType == nil ||
-		*head.ContentType != *contentType ||
-		!digestPresent ||
-		headMetadataDigest != etag {
+	var calculatedDigest string
 
+	fname := path.Base(key)
+	if strings.HasPrefix(fname, "sha256:") {
+		fields := strings.Split(fname, ":")
+		if len(fields) == 2 {
+			calculatedDigest = fields[1]
+		}
+	}
+
+	if calculatedDigest == "" {
 		r.Seek(0, io.SeekStart)
 		h := md5.New()
 		if _, err := io.Copy(h, r); err != nil {
 			return err
 		}
-		calculatedDigest := fmt.Sprintf("%x", h.Sum(nil))
+		calculatedDigest = fmt.Sprintf("%x", h.Sum(nil))
 		r.Seek(0, io.SeekStart)
+	}
+
+	if head == nil ||
+		head.ContentType == nil ||
+		*head.ContentType != *contentType ||
+		calculatedDigest != etag {
 
 		log.Info().
 			Str("bucket", *bucket).
@@ -242,13 +245,10 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 
 		if _, err := s3Session.PutObject(&s3.PutObjectInput{
 			Bucket:      bucket,
-			Key:         &key,
+			Key:         aws.String(key),
 			Body:        r,
 			ACL:         acl,
 			ContentType: contentType,
-			Metadata: map[string]*string{
-				"X-Calculated-Digest": aws.String(calculatedDigest),
-			},
 		}); err != nil {
 			return err
 		}
@@ -259,4 +259,24 @@ func syncObject(ctx context.Context, s3Session *s3.S3, bucket *string, key strin
 
 func manifestKey(image *structs.Image, tag string) string {
 	return filepath.Join("v2", image.GetSourceRepository(), "manifests", tag)
+}
+
+func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, error) {
+	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
+		Bucket: bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
+			return false, "", err
+		}
+		return false, "", nil
+	}
+
+	var etag string
+	if head != nil && head.ETag != nil {
+		etag = strings.ReplaceAll(*head.ETag, `"`, "")
+	}
+
+	return true, etag, nil
 }
