@@ -10,7 +10,7 @@ require (
 	github.com/google/go-containerregistry v0.20.2
 	github.com/prometheus/client_golang v1.20.2
 	github.com/rs/zerolog v1.33.0
-	github.com/spf13/cast v1.6.0
+	github.com/spf13/cast v1.7.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	go.opentelemetry.io/otel v1.32.0
