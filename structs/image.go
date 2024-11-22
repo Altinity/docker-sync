@@ -1,7 +1,6 @@
 package structs
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -41,9 +40,7 @@ func (i *Image) GetRegistry(url string) string {
 }
 
 func (i *Image) GetSourceRepository() string {
-	x := i.GetRepository(i.Source)
-	fmt.Println(x)
-	return x
+	return i.GetRepository(i.Source)
 }
 
 func (i *Image) GetName() string {
