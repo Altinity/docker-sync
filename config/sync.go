@@ -40,6 +40,7 @@ var (
 				"mutableTags": []string{
 					"latest",
 				},
+				"ignoredTags": []string{},
 			},
 		}),
 		WithValidImages())
