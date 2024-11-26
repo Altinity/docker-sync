@@ -190,7 +190,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			for _, obj := range s3Lister.Contents {
 				fname := filepath.Base(*obj.Key)
 				if !strings.HasPrefix(fname, "sha256:") {
-					dstTags = append(dstTags, fname)
+					dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, fname))
 				}
 			}
 
