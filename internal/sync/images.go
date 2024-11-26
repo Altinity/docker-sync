@@ -269,11 +269,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		if err := func() error {
 			tag := tag
 
-			desc, err := pull(ctx, srcPuller, image, tag)
-			if err != nil {
-				return err
-			}
-
 			for _, dst := range image.Targets {
 				if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
 					log.Info().
@@ -283,6 +278,11 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 						Msg("Tag already exists, skipping")
 
 					continue
+				}
+
+				desc, err := pull(ctx, srcPuller, image, tag)
+				if err != nil {
+					return err
 				}
 
 				if err := push(ctx, image, desc, dst, tag); err != nil {
