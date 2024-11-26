@@ -10,6 +10,7 @@ type Image struct {
 	Source      string                   `json:"source" yaml:"source"`
 	Targets     []string                 `json:"targets" yaml:"targets"`
 	MutableTags []string                 `json:"mutableTags" yaml:"mutableTags"`
+	IgnoredTags []string                 `json:"ignoredTags" yaml:"ignoredTags"`
 	Auths       map[string]remote.Option `json:"-" yaml:"-"`
 }
 

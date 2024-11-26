@@ -20,6 +20,7 @@ type syncImage struct {
 	Source      string   `yaml:"source"`
 	Targets     []string `yaml:"targets"`
 	MutableTags []string `yaml:"mutableTags"`
+	IgnoredTags []string `yaml:"ignoredTags"`
 }
 
 type syncAuth struct {
@@ -71,11 +72,13 @@ var syncCmd = &cobra.Command{
 		source, _ := cmd.Flags().GetString("source")
 		targets, _ := cmd.Flags().GetStringSlice("targets")
 		mutableTags, _ := cmd.Flags().GetStringSlice("mutableTags")
+		ignoredTags, _ := cmd.Flags().GetStringSlice("ignoredTags")
 
 		cnf.Sync.Images = append(cnf.Sync.Images, syncImage{
 			Source:      source,
 			Targets:     targets,
 			MutableTags: mutableTags,
+			IgnoredTags: ignoredTags,
 		})
 
 		var registries []syncRegistry
@@ -184,6 +187,7 @@ func init() {
 	syncCmd.MarkFlagRequired("targets")
 
 	syncCmd.Flags().StringSliceP("mutableTags", "m", []string{}, "Mutable tags")
+	syncCmd.Flags().StringSliceP("ignoredTags", "i", []string{}, "Ignored tags")
 
 	syncCmd.Flags().StringP("ecr-region", "", os.Getenv("AWS_REGION"), "AWS region for ECR")
 

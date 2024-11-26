@@ -247,6 +247,14 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	// Sync tags
 	for _, tag := range srcTags {
+		if slices.Contains(image.IgnoredTags, tag) {
+			log.Info().
+				Str("image", image.Source).
+				Str("tag", tag).
+				Msg("Skipping ignored tag")
+			continue
+		}
+
 		telemetry.Errors.Add(ctx, 0,
 			metric.WithAttributes(
 				attribute.KeyValue{
