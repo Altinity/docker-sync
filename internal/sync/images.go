@@ -247,12 +247,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	// Sync tags
 	for _, tag := range srcTags {
-		log.Info().
-			Str("image", image.Source).
-			Str("tag", tag).
-			Strs("targets", image.Targets).
-			Msg("Syncing tag")
-
 		telemetry.Errors.Add(ctx, 0,
 			metric.WithAttributes(
 				attribute.KeyValue{
@@ -269,22 +263,37 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		if err := func() error {
 			tag := tag
 
+			var actualDsts []string
+
 			for _, dst := range image.Targets {
 				if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
-					log.Info().
-						Str("image", image.Source).
-						Str("tag", tag).
-						Str("target", dst).
-						Msg("Tag already exists, skipping")
-
 					continue
 				}
 
-				desc, err := pull(ctx, srcPuller, image, tag)
-				if err != nil {
-					return err
-				}
+				actualDsts = append(actualDsts, dst)
+			}
 
+			if len(actualDsts) == 0 {
+				log.Info().
+					Str("image", image.Source).
+					Str("tag", tag).
+					Msg("Tag already exists in all targets, skipping")
+
+				return nil
+			}
+
+			log.Info().
+				Str("image", image.Source).
+				Str("tag", tag).
+				Strs("targets", image.Targets).
+				Msg("Syncing tag")
+
+			desc, err := pull(ctx, srcPuller, image, tag)
+			if err != nil {
+				return err
+			}
+
+			for _, dst := range actualDsts {
 				if err := push(ctx, image, desc, dst, tag); err != nil {
 					return err
 				}
