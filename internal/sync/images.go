@@ -194,6 +194,12 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 				}
 			}
 
+			log.Info().
+				Str("image", image.Source).
+				Str("target", dst).
+				Int("tags", len(dstTags)).
+				Msg("Found destination tags")
+
 			continue
 		}
 
