@@ -133,11 +133,6 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 				return err
 			}
 
-			r, err := layer.Compressed()
-			if err != nil {
-				return err
-			}
-
 			tmpFile, err := os.Create(filepath.Join(tmpDir, "blob"))
 			if err != nil {
 				return err
@@ -145,9 +140,15 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 			defer os.Remove(tmpFile.Name())
 			defer tmpFile.Close()
 
+			r, err := layer.Compressed()
+			if err != nil {
+				return err
+			}
+
 			if _, err := io.Copy(tmpFile, r); err != nil {
 				return err
 			}
+			tmpFile.Seek(0, io.SeekStart)
 
 			if err := syncObject(
 				s3Session,
@@ -214,7 +215,6 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 	}
 
 	if calculatedDigest == "" {
-		r.Seek(0, io.SeekStart)
 		h := md5.New()
 		if _, err := io.Copy(h, r); err != nil {
 			return err
