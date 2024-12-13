@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,9 +19,17 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/rs/zerolog/log"
 )
+
+type manifestWithMediaType struct {
+	Digest    string
+	MediaType string
+	Manifest  []byte
+}
 
 func getS3Session(url string) (*s3.S3, *string, error) {
 	fields := strings.Split(url, ":")
@@ -100,19 +109,123 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 		}
 	}
 
-	l, err := i.Layers()
-	if err != nil {
-		return err
-	}
-
 	// Blobs can be huge and we need a io.ReadSeeker, so we can't read them all into memory.
 	tmpDir, err := os.MkdirTemp(os.TempDir(), "docker-sync")
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpDir)
+
+	var children []partial.Describable
+
+	idx, err := desc.ImageIndex()
+	if err == nil {
+		children, err = partial.Manifests(idx)
+		if err != nil {
+			return err
+		}
+	}
+
+	var manifests []*manifestWithMediaType
+	manifests = append(manifests, &manifestWithMediaType{
+		Manifest:  desc.Manifest,
+		MediaType: string(desc.MediaType),
+		Digest:    desc.Digest.String(),
+	})
+
+	var layers []v1.Layer
+	l, err := i.Layers()
+	if err != nil {
+		return err
+	}
+	layers = append(layers, l...)
+
+	// TODO: remove duplicate code
+	for _, child := range children {
+		switch child := child.(type) {
+		case v1.ImageIndex:
+			b, err := child.RawManifest()
+			if err != nil {
+				return err
+			}
+
+			if !slices.ContainsFunc(manifests, func(m *manifestWithMediaType) bool {
+				return bytes.Equal(m.Manifest, b)
+			}) {
+
+				childMediaType, err := child.MediaType()
+				if err != nil {
+					return err
+				}
+				childDigest, err := child.Digest()
+				if err != nil {
+					return err
+				}
+
+				manifests = append(manifests, &manifestWithMediaType{
+					Manifest:  b,
+					MediaType: string(childMediaType),
+					Digest:    childDigest.String(),
+				})
+			}
+
+		case v1.Image:
+			b, err := child.RawManifest()
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(manifests, func(m *manifestWithMediaType) bool {
+				return bytes.Equal(m.Manifest, b)
+			}) {
+
+				childMediaType, err := child.MediaType()
+				if err != nil {
+					return err
+				}
+				childDigest, err := child.Digest()
+				if err != nil {
+					return err
+				}
+				manifests = append(manifests, &manifestWithMediaType{
+					Manifest:  b,
+					MediaType: string(childMediaType),
+					Digest:    childDigest.String(),
+				})
+			}
+
+			l, err := child.Layers()
+			if err != nil {
+				return err
+			}
+			for _, layer := range l {
+				layerDigest, err := child.Digest()
+				if err != nil {
+					return err
+				}
+				if !slices.ContainsFunc(layers, func(l v1.Layer) bool {
+					ldigest, _ := l.Digest()
+					return ldigest.String() == layerDigest.String()
+				}) {
+					layers = append(layers, layer)
+				}
+			}
+
+		case v1.Layer:
+			childDigest, err := child.Digest()
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(layers, func(l v1.Layer) bool {
+				ldigest, _ := l.Digest()
+				return ldigest.String() == childDigest.String()
+			}) {
+				layers = append(layers, child)
+			}
+		}
+	}
 
 	// Layers are synced first to avoid making a tag available before all its blobs are available.
-	for _, layer := range l {
+	for _, layer := range layers {
 		if err := func() error {
 			digest, err := layer.Digest()
 			if err != nil {
@@ -167,19 +280,20 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 		}
 	}
 
-	mediaType := aws.String(string(desc.MediaType))
+	// Sync the manifests
+	for _, manifest := range manifests {
+		manifest := manifest
 
-	manifest := desc.Manifest
-
-	if err := syncObject(
-		s3Session,
-		bucket,
-		filepath.Join(baseDir, "manifests", desc.Digest.String()),
-		acl,
-		mediaType,
-		bytes.NewReader(manifest),
-	); err != nil {
-		return err
+		if err := syncObject(
+			s3Session,
+			bucket,
+			filepath.Join(baseDir, "manifests", manifest.Digest),
+			acl,
+			aws.String(manifest.MediaType),
+			bytes.NewReader(manifest.Manifest),
+		); err != nil {
+			return err
+		}
 	}
 
 	// Tag is added last so it can be used to check for duplication.
@@ -188,8 +302,8 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 		bucket,
 		manifestKey(image, tag),
 		acl,
-		mediaType,
-		bytes.NewReader(manifest),
+		aws.String(string(desc.MediaType)),
+		bytes.NewReader(desc.Manifest),
 	); err != nil {
 		return err
 	}
