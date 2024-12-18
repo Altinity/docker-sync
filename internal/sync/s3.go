@@ -29,7 +29,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Cache already seem objects for a short time to avoid excessive S3 HEAD requests
+// Cache already seem objects for a short time to avoid excessive S3 HEAD requests.
 var objectCache *ttlcache.Cache[string, bool]
 
 func init() {
@@ -253,7 +253,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 		Msg("Syncing objects")
 
 	// Limit upload concurrency
-	g, ctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(config.SyncS3MaxConcurrentUploads.Int())
 
 	// Layers are synced first to avoid making a tag available before all its blobs are available.
