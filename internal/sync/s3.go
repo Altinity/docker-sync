@@ -2,18 +2,20 @@ package sync
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/Altinity/docker-sync/structs"
+	"github.com/Altinity/docker-sync/config"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -22,8 +24,30 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
+
+// Cache already seem objects for a short time to avoid excessive S3 HEAD requests
+var objectCache *ttlcache.Cache[string, bool]
+
+func init() {
+	objectCache = ttlcache.New(
+		ttlcache.WithTTL[string, bool](config.SyncS3ObjectCacheExpirationTime.Duration()),
+		ttlcache.WithCapacity[string, bool](config.SyncS3ObjectCacheCapacity.UInt64()),
+	)
+
+	objectCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, bool]) {
+		log.Debug().
+			Str("key", item.Key()).
+			Msg("Evicted object from cache")
+	})
+
+	if config.SyncS3ObjectCacheEnabled.Bool() {
+		objectCache.Start()
+	}
+}
 
 type manifestWithMediaType struct {
 	Digest    string
@@ -60,42 +84,118 @@ func getS3Session(url string) (*s3.S3, *string, error) {
 	return s3.New(newSession), bucket, nil
 }
 
-func pushS3(image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+func pushS3(ctx context.Context, desc *remote.Descriptor, dst string, repository string, tag string) error {
 	s3Session, bucket, err := getS3Session(dst)
 	if err != nil {
 		return err
 	}
 
-	return pushS3WithSession(s3Session, bucket, image, desc, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, repository, desc, tag)
 }
 
-func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, desc *remote.Descriptor, tag string) error {
+func extractManifestsAndLayers(d partial.Describable, manifests []*manifestWithMediaType, layers []v1.Layer) ([]*manifestWithMediaType, []v1.Layer, error) {
+	switch obj := d.(type) {
+	case v1.ImageIndex:
+		b, err := obj.RawManifest()
+		if err != nil {
+			return manifests, layers, err
+		}
+		if !containsManifest(manifests, b) {
+			childMediaType, err := obj.MediaType()
+			if err != nil {
+				return manifests, layers, err
+			}
+			childDigest, err := obj.Digest()
+			if err != nil {
+				return manifests, layers, err
+			}
+			manifests = append(manifests, &manifestWithMediaType{
+				Manifest:  b,
+				MediaType: string(childMediaType),
+				Digest:    childDigest.String(),
+			})
+		}
+	case v1.Image:
+		b, err := obj.RawManifest()
+		if err != nil {
+			return manifests, layers, err
+		}
+		if !containsManifest(manifests, b) {
+			childMediaType, err := obj.MediaType()
+			if err != nil {
+				return manifests, layers, err
+			}
+			childDigest, err := obj.Digest()
+			if err != nil {
+				return manifests, layers, err
+			}
+			manifests = append(manifests, &manifestWithMediaType{
+				Manifest:  b,
+				MediaType: string(childMediaType),
+				Digest:    childDigest.String(),
+			})
+		}
+		l, err := obj.Layers()
+		if err != nil {
+			return manifests, layers, err
+		}
+		for _, layer := range l {
+			layers = appendLayerIfNotExists(layers, layer)
+		}
+	case v1.Layer:
+		layers = appendLayerIfNotExists(layers, obj)
+	}
+	return manifests, layers, nil
+}
+
+func containsManifest(manifests []*manifestWithMediaType, manifest []byte) bool {
+	for _, m := range manifests {
+		if bytes.Equal(m.Manifest, manifest) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendLayerIfNotExists(layers []v1.Layer, layer v1.Layer) []v1.Layer {
+	layerDigest, err := layer.Digest()
+	if err != nil {
+		return layers
+	}
+	for _, l := range layers {
+		ldigest, _ := l.Digest()
+		if ldigest == layerDigest {
+			return layers
+		}
+	}
+	return append(layers, layer)
+}
+
+func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, repository string, desc *remote.Descriptor, tag string) error {
 	acl := aws.String("public-read")
 
-	// FIXME: this only needs to be called once per bucket
+	// FIXME: This only needs to be called once per bucket. Currently alleviated by the object cache.
 	if err := syncObject(
 		s3Session,
 		bucket,
 		"v2",
 		acl,
 		aws.String("application/json"),
-		bytes.NewReader([]byte("{}")), // No content is needed, we just need to return a 200.
+		strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
 	); err != nil {
 		return err
 	}
 
-	baseDir := filepath.Join("v2", image.GetSourceRepository())
+	baseDir := filepath.Join("v2", repository)
 
 	i, err := desc.Image()
 	if err != nil {
 		return err
 	}
 
-	cnf, err := i.RawConfigFile()
-	// Config is optional, so we don't return an error if it's not found.
-	if err == nil {
-		cnfHash, err := i.ConfigName()
-		if err == nil {
+	if cnf, err := i.RawConfigFile(); err == nil {
+		// Config is optional, so ignore if it's not found.
+		if cnfHash, err := i.ConfigName(); err == nil {
 			if err := syncObject(
 				s3Session,
 				bucket,
@@ -106,15 +206,10 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 			); err != nil {
 				return err
 			}
+		} else {
+			return fmt.Errorf("failed to get config name: %w", err)
 		}
 	}
-
-	// Blobs can be huge and we need a io.ReadSeeker, so we can't read them all into memory.
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "docker-sync")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpDir)
 
 	var children []partial.Describable
 
@@ -140,93 +235,30 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 	}
 	layers = append(layers, l...)
 
-	// TODO: remove duplicate code
 	for _, child := range children {
-		switch child := child.(type) {
-		case v1.ImageIndex:
-			b, err := child.RawManifest()
-			if err != nil {
-				return err
-			}
-
-			if !slices.ContainsFunc(manifests, func(m *manifestWithMediaType) bool {
-				return bytes.Equal(m.Manifest, b)
-			}) {
-
-				childMediaType, err := child.MediaType()
-				if err != nil {
-					return err
-				}
-				childDigest, err := child.Digest()
-				if err != nil {
-					return err
-				}
-
-				manifests = append(manifests, &manifestWithMediaType{
-					Manifest:  b,
-					MediaType: string(childMediaType),
-					Digest:    childDigest.String(),
-				})
-			}
-
-		case v1.Image:
-			b, err := child.RawManifest()
-			if err != nil {
-				return err
-			}
-			if !slices.ContainsFunc(manifests, func(m *manifestWithMediaType) bool {
-				return bytes.Equal(m.Manifest, b)
-			}) {
-
-				childMediaType, err := child.MediaType()
-				if err != nil {
-					return err
-				}
-				childDigest, err := child.Digest()
-				if err != nil {
-					return err
-				}
-				manifests = append(manifests, &manifestWithMediaType{
-					Manifest:  b,
-					MediaType: string(childMediaType),
-					Digest:    childDigest.String(),
-				})
-			}
-
-			l, err := child.Layers()
-			if err != nil {
-				return err
-			}
-			for _, layer := range l {
-				layerDigest, err := child.Digest()
-				if err != nil {
-					return err
-				}
-				if !slices.ContainsFunc(layers, func(l v1.Layer) bool {
-					ldigest, _ := l.Digest()
-					return ldigest.String() == layerDigest.String()
-				}) {
-					layers = append(layers, layer)
-				}
-			}
-
-		case v1.Layer:
-			childDigest, err := child.Digest()
-			if err != nil {
-				return err
-			}
-			if !slices.ContainsFunc(layers, func(l v1.Layer) bool {
-				ldigest, _ := l.Digest()
-				return ldigest.String() == childDigest.String()
-			}) {
-				layers = append(layers, child)
-			}
+		childManifests, childLayers, err := extractManifestsAndLayers(child, manifests, layers)
+		if err != nil {
+			return err
 		}
+		manifests = append(manifests, childManifests...)
+		layers = append(layers, childLayers...)
 	}
+
+	log.Info().
+		Str("bucket", *bucket).
+		Str("repository", repository).
+		Str("tag", tag).
+		Int("layers", len(layers)).
+		Int("manifests", len(manifests)).
+		Msg("Syncing objects")
+
+	// Limit upload concurrency
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(config.SyncS3MaxConcurrentUploads.Int())
 
 	// Layers are synced first to avoid making a tag available before all its blobs are available.
 	for _, layer := range layers {
-		if err := func() error {
+		g.Go(func() error {
 			digest, err := layer.Digest()
 			if err != nil {
 				return err
@@ -234,34 +266,15 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 
 			key := filepath.Join(baseDir, "blobs", digest.String())
 
-			exists, _, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
-			if err != nil {
-				return err
-			} else if exists && fmt.Sprintf("sha256:%s", headMetadataDigest) == digest.String() {
-				return nil
-			}
-
 			mediaType, err := layer.MediaType()
 			if err != nil {
 				return err
 			}
 
-			tmpFile, err := os.Create(filepath.Join(tmpDir, "blob"))
-			if err != nil {
-				return err
-			}
-			defer os.Remove(tmpFile.Name())
-			defer tmpFile.Close()
-
 			r, err := layer.Compressed()
 			if err != nil {
 				return err
 			}
-
-			if _, err := io.Copy(tmpFile, r); err != nil {
-				return err
-			}
-			tmpFile.Seek(0, io.SeekStart)
 
 			if err := syncObject(
 				s3Session,
@@ -269,38 +282,43 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 				key,
 				acl,
 				aws.String(string(mediaType)),
-				tmpFile,
+				r,
 			); err != nil {
 				return err
 			}
 
 			return nil
-		}(); err != nil {
-			return err
-		}
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Sync the manifests
 	for _, manifest := range manifests {
-		manifest := manifest
+		g.Go(func() error {
+			manifest := manifest
 
-		if err := syncObject(
-			s3Session,
-			bucket,
-			filepath.Join(baseDir, "manifests", manifest.Digest),
-			acl,
-			aws.String(manifest.MediaType),
-			bytes.NewReader(manifest.Manifest),
-		); err != nil {
-			return err
-		}
+			return syncObject(
+				s3Session,
+				bucket,
+				filepath.Join(baseDir, "manifests", manifest.Digest),
+				acl,
+				aws.String(manifest.MediaType),
+				bytes.NewReader(manifest.Manifest),
+			)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Tag is added last so it can be used to check for duplication.
 	if err := syncObject(
 		s3Session,
 		bucket,
-		manifestKey(image, tag),
+		manifestKey(repository, tag),
 		acl,
 		aws.String(string(desc.MediaType)),
 		bytes.NewReader(desc.Manifest),
@@ -311,75 +329,120 @@ func pushS3WithSession(s3Session *s3.S3, bucket *string, image *structs.Image, d
 	return nil
 }
 
-func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.ReadSeeker) error {
-	_, _, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
+func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.Reader) error {
+	cacheKey := fmt.Sprintf("%s/%s", *bucket, key)
+
+	if config.SyncS3ObjectCacheEnabled.Bool() {
+		if seem := objectCache.Has(cacheKey); seem {
+			log.Debug().
+				Str("bucket", *bucket).
+				Str("key", key).
+				Msg("Object seem recently, skipping upload")
+			return nil
+		}
+	}
+
+	exists, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
 	if err != nil {
 		return err
 	}
 
-	var calculatedDigest string
-
-	// If we are uploading a blob, trust it's digest
 	fname := path.Base(key)
-	if strings.HasPrefix(fname, "sha256:") {
-		fields := strings.Split(fname, ":")
-		if len(fields) == 2 {
-			calculatedDigest = fields[1]
-		}
-	}
 
-	if calculatedDigest == "" {
-		h := md5.New()
-		if _, err := io.Copy(h, r); err != nil {
-			return err
-		}
-		calculatedDigest = fmt.Sprintf("%x", h.Sum(nil))
-		r.Seek(0, io.SeekStart)
-	}
-
-	if calculatedDigest != headMetadataDigest {
-		log.Info().
+	// Try to avoid downloading the object if it already exists
+	if exists && strings.HasPrefix(fname, "sha256:") && fname == headMetadataDigest {
+		log.Debug().
 			Str("bucket", *bucket).
 			Str("key", key).
-			Str("contentType", *contentType).
-			Msg("Syncing object")
+			Msg("Object already exists with same digest, skipping upload")
 
-		if _, err := s3Session.PutObject(&s3.PutObjectInput{
-			Bucket:      bucket,
-			Key:         aws.String(key),
-			Body:        r,
-			ACL:         acl,
-			ContentType: contentType,
-			Metadata: map[string]*string{
-				"X-Calculated-Digest": aws.String(calculatedDigest),
-			},
-		}); err != nil {
-			return err
+		if config.SyncS3ObjectCacheEnabled.Bool() {
+			objectCache.Set(cacheKey, true, ttlcache.DefaultTTL)
 		}
+		return nil
+	}
+
+	// Blobs can be huge and we need a io.ReadSeeker, so we can't read them all into memory.
+	tmpFile, err := os.CreateTemp("", "blob-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	sha256Hash := sha256.New()
+	md5Hash := md5.New()
+	mw := io.MultiWriter(tmpFile, sha256Hash, md5Hash)
+
+	fsize, err := io.Copy(mw, r)
+	if err != nil {
+		return fmt.Errorf("failed to copy data to temp file: %w", err)
+	}
+
+	calculatedDigest := fmt.Sprintf("sha256:%x", sha256Hash.Sum(nil))
+	contentMD5 := base64.StdEncoding.EncodeToString(md5Hash.Sum(nil))
+
+	// Try to avoid uploading the object if the hash matches
+	if calculatedDigest == headMetadataDigest {
+		log.Debug().
+			Str("bucket", *bucket).
+			Str("key", key).
+			Msg("Object already exists with same digest, skipping upload")
+
+		if config.SyncS3ObjectCacheEnabled.Bool() {
+			objectCache.Set(cacheKey, true, ttlcache.DefaultTTL)
+		}
+		return nil
+	}
+
+	// Seek to the start of the file so we can read it again for the S3 upload
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek to start of temp file: %w", err)
+	}
+
+	log.Info().
+		Str("bucket", *bucket).
+		Str("contentType", *contentType).
+		Str("computedDigest", calculatedDigest).
+		Str("key", key).
+		Int64("size", fsize).
+		Msg("Uploading object")
+
+	if _, err := s3Session.PutObject(&s3.PutObjectInput{
+		Bucket:      bucket,
+		Key:         aws.String(key),
+		Body:        tmpFile,
+		ACL:         acl,
+		ContentType: contentType,
+		ContentMD5:  aws.String(contentMD5),
+		Metadata: map[string]*string{
+			"X-Calculated-Digest": aws.String(calculatedDigest),
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to upload object: %w", err)
+	}
+
+	if config.SyncS3ObjectCacheEnabled.Bool() {
+		objectCache.Set(cacheKey, true, ttlcache.DefaultTTL)
 	}
 
 	return nil
 }
 
-func manifestKey(image *structs.Image, tag string) string {
-	return filepath.Join("v2", image.GetSourceRepository(), "manifests", tag)
+func manifestKey(repository string, tag string) string {
+	return filepath.Join("v2", repository, "manifests", tag)
 }
 
-func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, string, error) {
+func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, error) {
 	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
 		Bucket: bucket,
 		Key:    &key,
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
-			return false, "", "", err
+			return false, "", err
 		}
-		return false, "", "", nil
-	}
-
-	var etag string
-	if head != nil && head.ETag != nil {
-		etag = strings.ReplaceAll(*head.ETag, `"`, "")
+		return false, "", nil
 	}
 
 	// R2 only supports MD5, so we need to check the custom X-Calculated-Digest metadata for the SHA256 hash
@@ -391,5 +454,5 @@ func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string,
 		}
 	}
 
-	return true, etag, headMetadataDigest, nil
+	return true, headMetadataDigest, nil
 }
