@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -34,40 +31,47 @@ func checkRateLimit(err error) error {
 
 func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
-		if strings.HasPrefix(dst, "r2:") {
-			if err := pushR2(image, desc, dst, tag); err != nil {
+		switch getRepositoryType(dst) {
+		case S3CompatibleRepository:
+			fields := strings.Split(dst, ":")
+
+			var fn func(context.Context, *remote.Descriptor, string, string, string) error
+
+			switch fields[0] {
+			case "r2":
+				fn = pushR2
+			case "s3":
+				fn = pushS3
+			default:
+				return fmt.Errorf("unsupported bucket destination: %s", dst)
+			}
+
+			if err := fn(ctx, desc, dst, fields[3], tag); err != nil {
 				if errors.Is(err, remote.ErrSchema1) {
 					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
 				}
 				return err
 			}
-			return nil
-		}
 
-		if strings.HasPrefix(dst, "s3:") {
-			if err := pushS3(image, desc, dst, tag); err != nil {
-				if errors.Is(err, remote.ErrSchema1) {
-					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
-				}
+			return nil
+		case OCIRepository:
+			pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+
+			pusher, err := remote.NewPusher(pushAuth)
+			if err != nil {
 				return err
 			}
-			return nil
-		}
 
-		pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+			dstTag, err := name.ParseReference(fmt.Sprintf("%s:%s", dst, tag))
+			if err != nil {
+				return fmt.Errorf("failed to parse tag: %w", err)
+			}
 
-		pusher, err := remote.NewPusher(pushAuth)
-		if err != nil {
-			return err
-		}
-
-		dstTag, err := name.ParseReference(fmt.Sprintf("%s:%s", dst, tag))
-		if err != nil {
-			return fmt.Errorf("failed to parse tag: %w", err)
-		}
-
-		if err := pusher.Push(ctx, dstTag, desc); err != nil {
-			return checkRateLimit(err)
+			if err := pusher.Push(ctx, dstTag, desc); err != nil {
+				return checkRateLimit(err)
+			}
+		default:
+			return fmt.Errorf("unsupported repository type")
 		}
 
 		return nil
@@ -120,129 +124,76 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		Strs("targets", image.Targets).
 		Msg("Syncing image")
 
-	pullAuth, pullAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcAuth, srcAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
-	srcPuller, err := remote.NewPuller(pullAuth)
+	srcTags, err := listOCITags(ctx, srcAuth, image, "")
 	if err != nil {
 		return err
 	}
 
-	srcRepo, err := name.NewRepository(image.Source)
-	if err != nil {
-		return err
-	}
+	if len(srcTags) == 0 {
+		log.Warn().
+			Str("image", image.Source).
+			Str("auth", srcAuthName).
+			Msg("No source tags found, skipping image")
 
-	srcLister, err := srcPuller.Lister(ctx, srcRepo)
-	if err != nil {
-		return err
-	}
-
-	// Get all tags from source
-	log.Info().
-		Str("image", image.Source).
-		Str("auth", pullAuthName).
-		Msg("Fetching tags")
-
-	var srcTags []string
-
-	for srcLister.HasNext() {
-		tags, err := srcLister.Next(ctx)
-		if err != nil {
-			return err
-		}
-
-		srcTags = append(srcTags, tags.Tags...)
+		return nil
 	}
 
 	log.Info().
 		Str("image", image.Source).
-		Str("auth", pullAuthName).
+		Str("auth", srcAuthName).
 		Int("tags", len(srcTags)).
-		Msg("Found tags")
+		Msg("Found source tags")
+
+	srcPuller, err := remote.NewPuller(srcAuth)
+	if err != nil {
+		return err
+	}
 
 	// Get all tags from targets
 	var dstTags []string
 
 	for _, dst := range image.Targets {
-		if strings.HasPrefix(dst, "r2:") || strings.HasPrefix(dst, "s3:") {
-			var s3Session *s3.S3
-			var bucket *string
-			var err error
+		switch getRepositoryType(dst) {
+		case S3CompatibleRepository:
+			fields := strings.Split(dst, ":")
 
-			if strings.HasPrefix(dst, "r2:") {
-				s3Session, bucket, err = getR2Session(dst)
-			}
-			if strings.HasPrefix(dst, "s3:") {
-				s3Session, bucket, err = getS3Session(dst)
-			}
+			tags, err := listS3Tags(dst, fields)
 			if err != nil {
 				return err
 			}
 
-			s3Lister, err := s3Session.ListObjectsV2(&s3.ListObjectsV2Input{
-				Bucket: bucket,
-				Prefix: aws.String(filepath.Join("v2", image.GetSourceRepository(), "manifests")),
-			})
-			if err != nil {
-				return err
-			}
+			if len(tags) > 0 {
+				log.Info().
+					Str("image", image.Source).
+					Str("target", dst).
+					Int("tags", len(tags)).
+					Msg("Found destination tags")
 
-			for _, obj := range s3Lister.Contents {
-				fname := filepath.Base(*obj.Key)
-				if !strings.HasPrefix(fname, "sha256:") {
-					dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, fname))
-				}
+				dstTags = append(dstTags, tags...)
 			}
-
-			log.Info().
-				Str("image", image.Source).
-				Str("target", dst).
-				Int("tags", len(dstTags)).
-				Msg("Found destination tags")
 
 			continue
-		}
+		case OCIRepository:
+			auth, dstAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
-		dstRepo, err := name.NewRepository(dst)
-		if err != nil {
-			return err
-		}
-
-		pushAuth, pushAuthName := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
-
-		log.Info().
-			Str("image", image.Source).
-			Str("target", dst).
-			Str("auth", pushAuthName).
-			Msg("Fetching destination tags")
-
-		dstPuller, err := remote.NewPuller(pushAuth)
-		if err != nil {
-			return err
-		}
-
-		dstLister, err := dstPuller.Lister(ctx, dstRepo)
-		if err != nil {
-			return err
-		}
-
-		for dstLister.HasNext() {
-			tags, err := dstLister.Next(ctx)
+			tags, err := listOCITags(ctx, auth, image, dst)
 			if err != nil {
 				return err
 			}
 
-			for _, tag := range tags.Tags {
-				dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, tag))
+			if len(tags) > 0 {
+				log.Info().
+					Str("image", image.Source).
+					Str("target", dst).
+					Int("tags", len(tags)).
+					Str("auth", dstAuthName).
+					Msg("Found destination tags")
+
+				dstTags = append(dstTags, tags...)
 			}
 		}
-
-		log.Info().
-			Str("image", image.Source).
-			Str("target", dst).
-			Int("tags", len(dstTags)).
-			Str("auth", pushAuthName).
-			Msg("Found destination tags")
 	}
 
 	// Sync tags
