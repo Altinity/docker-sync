@@ -93,7 +93,7 @@ func pushS3(ctx context.Context, desc *remote.Descriptor, dst string, repository
 	return pushS3WithSession(ctx, s3Session, bucket, repository, desc, tag)
 }
 
-func extractManifestsAndLayers(d partial.Describable, manifests []*manifestWithMediaType, layers []v1.Layer) ([]*manifestWithMediaType, []v1.Layer, error) {
+func extractManifestsAndLayers(s3Session *s3.S3, bucket *string, acl *string, baseDir string, d partial.Describable, manifests []*manifestWithMediaType, layers []v1.Layer) ([]*manifestWithMediaType, []v1.Layer, error) {
 	switch obj := d.(type) {
 	case v1.ImageIndex:
 		b, err := obj.RawManifest()
@@ -116,6 +116,10 @@ func extractManifestsAndLayers(d partial.Describable, manifests []*manifestWithM
 			})
 		}
 	case v1.Image:
+		if err := extractConfigFile(s3Session, bucket, acl, baseDir, obj); err != nil {
+			return manifests, layers, err
+		}
+
 		b, err := obj.RawManifest()
 		if err != nil {
 			return manifests, layers, err
@@ -171,6 +175,28 @@ func appendLayerIfNotExists(layers []v1.Layer, layer v1.Layer) []v1.Layer {
 	return append(layers, layer)
 }
 
+func extractConfigFile(s3Session *s3.S3, bucket *string, acl *string, baseDir string, i v1.Image) error {
+	if cnf, err := i.RawConfigFile(); err == nil {
+		// Config is optional, so ignore if it's not found.
+		if cnfHash, err := i.ConfigName(); err == nil {
+			if err := syncObject(
+				s3Session,
+				bucket,
+				filepath.Join(baseDir, "blobs", cnfHash.String()),
+				acl,
+				aws.String("application/vnd.oci.image.config.v1+json"),
+				bytes.NewReader(cnf),
+			); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("failed to get config name: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, repository string, desc *remote.Descriptor, tag string) error {
 	acl := aws.String("public-read")
 
@@ -193,22 +219,8 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 		return err
 	}
 
-	if cnf, err := i.RawConfigFile(); err == nil {
-		// Config is optional, so ignore if it's not found.
-		if cnfHash, err := i.ConfigName(); err == nil {
-			if err := syncObject(
-				s3Session,
-				bucket,
-				filepath.Join(baseDir, "blobs", cnfHash.String()),
-				acl,
-				aws.String("application/vnd.docker.container.image.v1+json"),
-				bytes.NewReader(cnf),
-			); err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("failed to get config name: %w", err)
-		}
+	if err := extractConfigFile(s3Session, bucket, acl, baseDir, i); err != nil {
+		return err
 	}
 
 	var children []partial.Describable
@@ -236,7 +248,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 	layers = append(layers, l...)
 
 	for _, child := range children {
-		childManifests, childLayers, err := extractManifestsAndLayers(child, manifests, layers)
+		childManifests, childLayers, err := extractManifestsAndLayers(s3Session, bucket, acl, baseDir, child, manifests, layers)
 		if err != nil {
 			return err
 		}
