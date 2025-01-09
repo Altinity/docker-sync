@@ -67,7 +67,24 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 				return fmt.Errorf("failed to parse tag: %w", err)
 			}
 
-			if err := pusher.Push(ctx, dstTag, desc); err != nil {
+			dataCounter := &ociDataCounter{
+				ctx:  ctx,
+				dest: dst,
+				f:    desc,
+			}
+
+			if err := pusher.Push(ctx, dstTag, dataCounter); err != nil {
+				// FIXME: Work around bug in go-containerregistry.
+				// Unfortunately we lose the uploaded bytes telemetry.
+				if strings.Contains(err.Error(), "MANIFEST_BLOB_UNKNOWN") || strings.Contains(err.Error(), "INVALID") {
+					log.Warn().
+						Msg("Bug in go-containerregistry, falling back to skopeo")
+
+					skopeoSrcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository(), "src")
+					skopeoDstAuth, _ := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst), "dest")
+
+					return SkopeoCopy(ctx, fmt.Sprintf("%s:%s", image.GetSource(), tag), skopeoSrcAuth, fmt.Sprintf("%s:%s", dst, tag), skopeoDstAuth)
+				}
 				return checkRateLimit(err)
 			}
 		default:
@@ -126,7 +143,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 	srcAuth, srcAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
 
-	srcTags, err := listOCITags(ctx, srcAuth, image, "")
+	srcTags, err := listOCITags(ctx, srcAuth, image, image.GetSource(), "")
 	if err != nil {
 		return err
 	}
@@ -176,9 +193,9 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 			continue
 		case OCIRepository:
-			auth, dstAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+			auth, dstAuthName := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
 
-			tags, err := listOCITags(ctx, auth, image, dst)
+			tags, err := listOCITags(ctx, auth, image, dst, dst)
 			if err != nil {
 				return err
 			}

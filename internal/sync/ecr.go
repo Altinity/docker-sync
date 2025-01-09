@@ -36,14 +36,14 @@ func newEcrPublicClient() (*ecrpublic.ECRPublic, error) {
 	return ecrpublic.New(sess), nil
 }
 
-func authEcrPrivate(repository string) remote.Option {
+func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
 	client, err := newEcrClient()
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Failed to create ECR client, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	out, err := client.GetAuthorizationToken(nil)
@@ -52,14 +52,14 @@ func authEcrPrivate(repository string) remote.Option {
 			Err(err).
 			Msg("Failed to get ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	if len(out.AuthorizationData) == 0 {
 		log.Error().
 			Msg("No authorization data returned from ECR, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	b, err := base64.StdEncoding.DecodeString(*out.AuthorizationData[0].AuthorizationToken)
@@ -68,7 +68,7 @@ func authEcrPrivate(repository string) remote.Option {
 			Err(err).
 			Msg("Failed to decode ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	parts := strings.SplitN(string(b), ":", 2)
@@ -76,7 +76,7 @@ func authEcrPrivate(repository string) remote.Option {
 		log.Error().
 			Msg("Invalid ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	if _, err := client.CreateRepository(&ecr.CreateRepositoryInput{
@@ -87,21 +87,22 @@ func authEcrPrivate(repository string) remote.Option {
 			Msg("Failed to create ECR repository, pushing might fail")
 	}
 
-	return remote.WithAuth(&authn.Basic{
+	basic := &authn.Basic{
 		Username: parts[0],
 		Password: parts[1],
-	})
+	}
+	return remote.WithAuth(basic), basic
 }
 
 // FIXME: duplicated code.
-func authEcrPublic(repository string) remote.Option {
+func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
 	client, err := newEcrPublicClient()
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Failed to create ECR client, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	out, err := client.GetAuthorizationToken(nil)
@@ -110,7 +111,7 @@ func authEcrPublic(repository string) remote.Option {
 			Err(err).
 			Msg("Failed to get ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	b, err := base64.StdEncoding.DecodeString(*out.AuthorizationData.AuthorizationToken)
@@ -119,7 +120,7 @@ func authEcrPublic(repository string) remote.Option {
 			Err(err).
 			Msg("Failed to decode ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	parts := strings.SplitN(string(b), ":", 2)
@@ -127,7 +128,7 @@ func authEcrPublic(repository string) remote.Option {
 		log.Error().
 			Msg("Invalid ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain)
+		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 	}
 
 	if _, err := client.CreateRepository(&ecrpublic.CreateRepositoryInput{
@@ -138,8 +139,9 @@ func authEcrPublic(repository string) remote.Option {
 			Msg("Failed to create ECR repository, pushing might fail")
 	}
 
-	return remote.WithAuth(&authn.Basic{
+	basic := &authn.Basic{
 		Username: parts[0],
 		Password: parts[1],
-	})
+	}
+	return remote.WithAuth(basic), basic
 }

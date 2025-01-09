@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -30,32 +31,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
-
-// Cache already seem objects for a short time to avoid excessive S3 HEAD requests.
-var objectCache *ttlcache.Cache[string, bool]
-
-func init() {
-	objectCache = ttlcache.New(
-		ttlcache.WithTTL[string, bool](config.SyncS3ObjectCacheExpirationTime.Duration()),
-		ttlcache.WithCapacity[string, bool](config.SyncS3ObjectCacheCapacity.UInt64()),
-	)
-
-	objectCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, bool]) {
-		log.Debug().
-			Str("key", item.Key()).
-			Msg("Evicted object from cache")
-	})
-
-	if config.SyncS3ObjectCacheEnabled.Bool() {
-		objectCache.Start()
-	}
-}
-
-type manifestWithMediaType struct {
-	Digest    string
-	MediaType string
-	Manifest  []byte
-}
 
 func getS3Session(url string) (*s3.S3, *string, error) {
 	fields := strings.Split(url, ":")
@@ -92,136 +67,36 @@ func pushS3(ctx context.Context, desc *remote.Descriptor, dst string, repository
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, repository, desc, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, desc, tag)
 }
 
-func extractManifestsAndLayers(s3Session *s3.S3, bucket *string, acl *string, baseDir string, d partial.Describable, manifests []*manifestWithMediaType, layers []v1.Layer) ([]*manifestWithMediaType, []v1.Layer, error) {
-	switch obj := d.(type) {
-	case v1.ImageIndex:
-		b, err := obj.RawManifest()
-		if err != nil {
-			return manifests, layers, err
-		}
-		if !containsManifest(manifests, b) {
-			childMediaType, err := obj.MediaType()
-			if err != nil {
-				return manifests, layers, err
-			}
-			childDigest, err := obj.Digest()
-			if err != nil {
-				return manifests, layers, err
-			}
-			manifests = append(manifests, &manifestWithMediaType{
-				Manifest:  b,
-				MediaType: string(childMediaType),
-				Digest:    childDigest.String(),
-			})
-		}
-	case v1.Image:
-		if err := extractConfigFile(s3Session, bucket, acl, baseDir, obj); err != nil {
-			return manifests, layers, err
-		}
-
-		b, err := obj.RawManifest()
-		if err != nil {
-			return manifests, layers, err
-		}
-		if !containsManifest(manifests, b) {
-			childMediaType, err := obj.MediaType()
-			if err != nil {
-				return manifests, layers, err
-			}
-			childDigest, err := obj.Digest()
-			if err != nil {
-				return manifests, layers, err
-			}
-			manifests = append(manifests, &manifestWithMediaType{
-				Manifest:  b,
-				MediaType: string(childMediaType),
-				Digest:    childDigest.String(),
-			})
-		}
-		l, err := obj.Layers()
-		if err != nil {
-			return manifests, layers, err
-		}
-		for _, layer := range l {
-			layers = appendLayerIfNotExists(layers, layer)
-		}
-	case v1.Layer:
-		layers = appendLayerIfNotExists(layers, obj)
+func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, dst string, repository string, desc *remote.Descriptor, tag string) error {
+	s3c := &s3Client{
+		uploader:  s3manager.NewUploaderWithClient(s3Session),
+		s3Session: s3Session,
+		dst:       dst,
+		bucket:    bucket,
+		acl:       aws.String("public-read"),
+		baseDir:   filepath.Join("v2", repository),
 	}
-	return manifests, layers, nil
-}
-
-func containsManifest(manifests []*manifestWithMediaType, manifest []byte) bool {
-	for _, m := range manifests {
-		if bytes.Equal(m.Manifest, manifest) {
-			return true
-		}
-	}
-	return false
-}
-
-func appendLayerIfNotExists(layers []v1.Layer, layer v1.Layer) []v1.Layer {
-	layerDigest, err := layer.Digest()
-	if err != nil {
-		return layers
-	}
-	for _, l := range layers {
-		ldigest, _ := l.Digest()
-		if ldigest == layerDigest {
-			return layers
-		}
-	}
-	return append(layers, layer)
-}
-
-func extractConfigFile(s3Session *s3.S3, bucket *string, acl *string, baseDir string, i v1.Image) error {
-	if cnf, err := i.RawConfigFile(); err == nil {
-		// Config is optional, so ignore if it's not found.
-		if cnfHash, err := i.ConfigName(); err == nil {
-			if err := syncObject(
-				s3Session,
-				bucket,
-				filepath.Join(baseDir, "blobs", cnfHash.String()),
-				acl,
-				aws.String("application/vnd.oci.image.config.v1+json"),
-				bytes.NewReader(cnf),
-			); err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("failed to get config name: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, repository string, desc *remote.Descriptor, tag string) error {
-	acl := aws.String("public-read")
 
 	// FIXME: This only needs to be called once per bucket. Currently alleviated by the object cache.
 	if err := syncObject(
-		s3Session,
-		bucket,
+		ctx,
+		s3c,
 		"v2",
-		acl,
 		aws.String("application/json"),
 		strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
 	); err != nil {
 		return err
 	}
 
-	baseDir := filepath.Join("v2", repository)
-
 	i, err := desc.Image()
 	if err != nil {
 		return err
 	}
 
-	if err := extractConfigFile(s3Session, bucket, acl, baseDir, i); err != nil {
+	if err := extractConfigFile(ctx, s3c, i); err != nil {
 		return err
 	}
 
@@ -250,7 +125,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 	layers = append(layers, l...)
 
 	for _, child := range children {
-		childManifests, childLayers, err := extractManifestsAndLayers(s3Session, bucket, acl, baseDir, child, manifests, layers)
+		childManifests, childLayers, err := extractManifestsAndLayers(ctx, s3c, child, manifests, layers)
 		if err != nil {
 			return err
 		}
@@ -292,7 +167,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 				return err
 			}
 
-			key := filepath.Join(baseDir, "blobs", digest.String())
+			key := filepath.Join(s3c.baseDir, "blobs", digest.String())
 
 			mediaType, err := layer.MediaType()
 			if err != nil {
@@ -305,10 +180,9 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 			}
 
 			if err := syncObject(
-				s3Session,
-				bucket,
+				ctx,
+				s3c,
 				key,
-				acl,
 				aws.String(string(mediaType)),
 				r,
 			); err != nil {
@@ -328,10 +202,9 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 			manifest := manifest
 
 			return syncObject(
-				s3Session,
-				bucket,
-				filepath.Join(baseDir, "manifests", manifest.Digest),
-				acl,
+				ctx,
+				s3c,
+				filepath.Join(s3c.baseDir, "manifests", manifest.Digest),
 				aws.String(manifest.MediaType),
 				bytes.NewReader(manifest.Manifest),
 			)
@@ -344,10 +217,9 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 
 	// Tag is added last so it can be used to check for duplication.
 	if err := syncObject(
-		s3Session,
-		bucket,
+		ctx,
+		s3c,
 		manifestKey(repository, tag),
-		acl,
 		aws.String(string(desc.MediaType)),
 		bytes.NewReader(desc.Manifest),
 	); err != nil {
@@ -357,20 +229,26 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 	return nil
 }
 
-func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, contentType *string, r io.Reader) error {
-	cacheKey := fmt.Sprintf("%s/%s", *bucket, key)
+func syncObject(
+	ctx context.Context,
+	s3c *s3Client,
+	key string,
+	contentType *string,
+	r io.Reader,
+) error {
+	cacheKey := fmt.Sprintf("%s/%s", *s3c.bucket, key)
 
 	if config.SyncS3ObjectCacheEnabled.Bool() {
 		if seem := objectCache.Has(cacheKey); seem {
 			log.Debug().
-				Str("bucket", *bucket).
+				Str("bucket", *s3c.bucket).
 				Str("key", key).
 				Msg("Object seem recently, skipping upload")
 			return nil
 		}
 	}
 
-	exists, headMetadataDigest, err := s3ObjectExists(s3Session, bucket, key)
+	exists, headMetadataDigest, err := s3ObjectExists(s3c.s3Session, s3c.bucket, key)
 	if err != nil {
 		return err
 	}
@@ -380,7 +258,7 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 	// Try to avoid downloading the object if it already exists
 	if exists && strings.HasPrefix(fname, "sha256:") && fname == headMetadataDigest {
 		log.Debug().
-			Str("bucket", *bucket).
+			Str("bucket", *s3c.bucket).
 			Str("key", key).
 			Msg("Object already exists with same digest, skipping upload")
 
@@ -413,7 +291,7 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 	// Try to avoid uploading the object if the hash matches
 	if calculatedDigest == headMetadataDigest {
 		log.Debug().
-			Str("bucket", *bucket).
+			Str("bucket", *s3c.bucket).
 			Str("key", key).
 			Msg("Object already exists with same digest, skipping upload")
 
@@ -429,18 +307,24 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 	}
 
 	log.Info().
-		Str("bucket", *bucket).
+		Str("bucket", *s3c.bucket).
 		Str("contentType", *contentType).
 		Str("computedDigest", calculatedDigest).
 		Str("key", key).
 		Int64("size", fsize).
 		Msg("Uploading object")
 
-	if _, err := s3Session.PutObject(&s3.PutObjectInput{
-		Bucket:      bucket,
+	dataCounter := s3DataCounter{
+		ctx:  ctx,
+		dest: s3c.dst,
+		f:    tmpFile,
+	}
+
+	if _, err := s3c.uploader.Upload(&s3manager.UploadInput{
+		Bucket:      s3c.bucket,
 		Key:         aws.String(key),
-		Body:        tmpFile,
-		ACL:         acl,
+		Body:        dataCounter,
+		ACL:         s3c.acl,
 		ContentType: contentType,
 		ContentMD5:  aws.String(contentMD5),
 		Metadata: map[string]*string{
@@ -455,10 +339,6 @@ func syncObject(s3Session *s3.S3, bucket *string, key string, acl *string, conte
 	}
 
 	return nil
-}
-
-func manifestKey(repository string, tag string) string {
-	return filepath.Join("v2", repository, "manifests", tag)
 }
 
 func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, error) {
