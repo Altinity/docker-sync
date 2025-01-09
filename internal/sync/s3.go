@@ -32,6 +32,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var bucketInitCache = make(map[string]struct{})
+
 func getS3Session(url string) (*s3.S3, *string, error) {
 	fields := strings.Split(url, ":")
 	if len(fields) != 4 {
@@ -80,15 +82,19 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 		baseDir:   filepath.Join("v2", repository),
 	}
 
-	// FIXME: This only needs to be called once per bucket. Currently alleviated by the object cache.
-	if err := syncObject(
-		ctx,
-		s3c,
-		"v2",
-		aws.String("application/json"),
-		strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
-	); err != nil {
-		return err
+	bucketInitCacheKey := fmt.Sprintf("%s/%s", dst, *bucket)
+	if _, ok := bucketInitCache[bucketInitCacheKey]; !ok {
+		// FIXME: This only needs to be called once per bucket.
+		if err := syncObject(
+			ctx,
+			s3c,
+			"v2",
+			aws.String("application/json"),
+			strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
+		); err != nil {
+			return err
+		}
+		bucketInitCache[bucketInitCacheKey] = struct{}{}
 	}
 
 	i, err := desc.Image()
