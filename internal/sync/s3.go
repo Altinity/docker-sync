@@ -258,6 +258,20 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 		layers = append(layers, childLayers...)
 	}
 
+	// Deduplicate layers
+	slices.SortFunc(layers, func(a, b v1.Layer) int {
+		aDigest, _ := a.Digest()
+		bDigest, _ := b.Digest()
+		return cmp.Compare(aDigest.String(), bDigest.String())
+	})
+	layers = slices.Compact(layers)
+
+	// Deduplicate manifests
+	slices.SortFunc(manifests, func(a, b *manifestWithMediaType) int {
+		return cmp.Compare(a.Digest, b.Digest)
+	})
+	manifests = slices.Compact(manifests)
+
 	log.Info().
 		Str("bucket", *bucket).
 		Str("repository", repository).
@@ -271,15 +285,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 	g.SetLimit(config.SyncS3MaxConcurrentUploads.Int())
 
 	// Layers are synced first to avoid making a tag available before all its blobs are available.
-
-	// Deduplicate layers
-	slices.SortFunc(layers, func(a, b v1.Layer) int {
-		aDigest, _ := a.Digest()
-		bDigest, _ := b.Digest()
-		return cmp.Compare(aDigest.String(), bDigest.String())
-	})
-	layers = slices.Compact(layers)
-
 	for _, layer := range layers {
 		g.Go(func() error {
 			digest, err := layer.Digest()
@@ -316,12 +321,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, re
 	if err := g.Wait(); err != nil {
 		return err
 	}
-
-	// Deduplicate manifests
-	slices.SortFunc(manifests, func(a, b *manifestWithMediaType) int {
-		return cmp.Compare(a.Digest, b.Digest)
-	})
-	manifests = slices.Compact(manifests)
 
 	// Sync the manifests
 	for _, manifest := range manifests {
