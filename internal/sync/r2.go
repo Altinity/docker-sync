@@ -49,5 +49,5 @@ func pushR2(ctx context.Context, desc *remote.Descriptor, dst string, repository
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, repository, desc, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, desc, tag)
 }

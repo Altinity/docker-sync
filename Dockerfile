@@ -1,9 +1,5 @@
-FROM alpine as certs
-RUN apk update && apk add ca-certificates && update-ca-certificates
-
-FROM busybox:glibc
-
-COPY --from=certs /etc/ssl/certs /etc/ssl/certs
+FROM alpine:3.21.2
+RUN apk add --no-cache ca-certificates skopeo tini && update-ca-certificates
 
 COPY docker-sync /
 COPY entrypoint.sh /
@@ -13,4 +9,4 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 9090
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]

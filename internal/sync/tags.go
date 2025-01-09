@@ -51,13 +51,13 @@ func listS3Tags(dst string, fields []string) ([]string, error) {
 	return tags, nil
 }
 
-func listOCITags(ctx context.Context, auth remote.Option, image *structs.Image, includeRepo string) ([]string, error) {
+func listOCITags(ctx context.Context, auth remote.Option, image *structs.Image, dst string, includeRepo string) ([]string, error) {
 	puller, err := remote.NewPuller(auth)
 	if err != nil {
 		return nil, err
 	}
 
-	repo, err := name.NewRepository(image.Source)
+	repo, err := name.NewRepository(image.GetRepository(dst))
 	if err != nil {
 		return nil, err
 	}
