@@ -149,18 +149,24 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 	defer cancel()
 	go dockerDataCounter(chCtx, image.Source, "", ch)
 
-	_, err = copy.Image(ctx, policyContext, dstRef, srcRef, &copy.Options{
+	if _, err := copy.Image(ctx, policyContext, dstRef, srcRef, &copy.Options{
 		SourceCtx:          srcCtx,
 		ImageListSelection: copy.CopyAllImages,
 		ProgressInterval:   time.Second,
 		Progress:           ch,
-	})
+	}); err != nil {
+		return err
+	}
 
 	var blobs []string
 	var manifests []string
 
 	// walk all files
 	if err := filepath.WalkDir(tmpDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
 		fi, err := os.Stat(path)
 		if err != nil {
 			return err
@@ -247,7 +253,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 				ctx,
 				s3c,
 				key,
-				aws.String(string(mediaType)),
+				aws.String(mediaType),
 				f,
 			); err != nil {
 				return err
