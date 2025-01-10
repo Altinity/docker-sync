@@ -12,7 +12,7 @@ import (
 // NewLogger instantiates and returns a new *zerolog.Logger.
 func NewLogger() *zerolog.Logger {
 	// Set the global duration field unit to milliseconds
-	zerolog.DurationFieldUnit = time.Millisecond
+	zerolog.DurationFieldUnit = time.Second
 	// Set the global time field format to RFC3339
 	zerolog.TimeFieldFormat = time.RFC3339
 
