@@ -24,7 +24,10 @@ builds:
     main: ./cmd/dockersync
     binary: docker-sync
     tags:
+      - containers_image_docker_daemon_stub
       - containers_image_openpgp
+      - containers_image_storage_stub
+      - containers_image_fulcio_stub
 
 archives:
   - format: tar.gz
