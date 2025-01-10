@@ -2,31 +2,35 @@ package sync
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
+	"github.com/containers/image/v5/copy"
+	"github.com/containers/image/v5/docker"
+	"github.com/containers/image/v5/signature"
+
 	"github.com/Altinity/docker-sync/config"
+	"github.com/Altinity/docker-sync/structs"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/partial"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/containers/image/v5/directory"
+	"github.com/containers/image/v5/types"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -63,16 +67,16 @@ func getS3Session(url string) (*s3.S3, *string, error) {
 	return s3.New(newSession), bucket, nil
 }
 
-func pushS3(ctx context.Context, desc *remote.Descriptor, dst string, repository string, tag string) error {
+func pushS3(ctx context.Context, image *structs.Image, dst string, repository string, tag string) error {
 	s3Session, bucket, err := getS3Session(dst)
 	if err != nil {
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, desc, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, image, tag)
 }
 
-func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, dst string, repository string, desc *remote.Descriptor, tag string) error {
+func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, dst string, repository string, image *structs.Image, tag string) error {
 	s3c := &s3Client{
 		uploader:  s3manager.NewUploaderWithClient(s3Session),
 		s3Session: s3Session,
@@ -82,7 +86,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 		baseDir:   filepath.Join("v2", repository),
 	}
 
-	bucketInitCacheKey := fmt.Sprintf("%s/%s", dst, *bucket)
+	bucketInitCacheKey := fmt.Sprintf("%s/%s", image.GetRegistry(dst), *bucket)
 	if _, ok := bucketInitCache[bucketInitCacheKey]; !ok {
 		if err := syncObject(
 			ctx,
@@ -96,67 +100,130 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 		bucketInitCache[bucketInitCacheKey] = struct{}{}
 	}
 
-	i, err := desc.Image()
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "docker-sync-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	baseDir, err := os.MkdirTemp(os.TempDir(), "docker-sync-base-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(baseDir)
+
+	baseDir = filepath.Join(baseDir, "v2", repository)
+
+	if err := os.MkdirAll(filepath.Join(baseDir, "blobs"), 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "manifests"), 0755); err != nil {
+		return err
+	}
+
+	dstRef, err := directory.NewReference(tmpDir)
 	if err != nil {
 		return err
 	}
 
-	if err := extractConfigFile(ctx, s3c, i); err != nil {
-		return err
-	}
-
-	var children []partial.Describable
-
-	idx, err := desc.ImageIndex()
-	if err == nil {
-		children, err = partial.Manifests(idx)
-		if err != nil {
-			return err
-		}
-	}
-
-	var manifests []*manifestWithMediaType
-	manifests = append(manifests, &manifestWithMediaType{
-		Manifest:  desc.Manifest,
-		MediaType: string(desc.MediaType),
-		Digest:    desc.Digest.String(),
-	})
-
-	var layers []v1.Layer
-	l, err := i.Layers()
+	srcRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", image.Source, tag))
 	if err != nil {
 		return err
 	}
-	layers = append(layers, l...)
 
-	for _, child := range children {
-		childManifests, childLayers, err := extractManifestsAndLayers(ctx, s3c, child, manifests, layers)
+	srcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcCtx := &types.SystemContext{
+		DockerAuthConfig: srcAuth,
+	}
+
+	policy := &signature.Policy{Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()}}
+	policyContext, err := signature.NewPolicyContext(policy)
+	if err != nil {
+		return err
+	}
+
+	ch := make(chan types.ProgressProperties)
+	defer close(ch)
+
+	chCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go dockerDataCounter(chCtx, image.Source, "", ch)
+
+	_, err = copy.Image(ctx, policyContext, dstRef, srcRef, &copy.Options{
+		SourceCtx:          srcCtx,
+		ImageListSelection: copy.CopyAllImages,
+		ProgressInterval:   time.Second,
+		Progress:           ch,
+	})
+
+	var blobs []string
+	var manifests []string
+
+	// walk all files
+	if err := filepath.WalkDir(tmpDir, func(path string, d fs.DirEntry, err error) error {
+		fi, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
-		manifests = append(manifests, childManifests...)
-		layers = append(layers, childLayers...)
+		if fi.IsDir() {
+			return nil
+		}
+
+		base := filepath.Base(path)
+		switch {
+		case base == "version":
+			os.Remove(path)
+		case base == "manifest.json":
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			if err := func() error {
+				defer f.Close()
+
+				newPath := filepath.Join(baseDir, "manifests", tag)
+
+				if err := os.Link(path, newPath); err != nil {
+					return err
+				}
+
+				manifests = append(manifests, newPath)
+
+				return nil
+			}(); err != nil {
+				return err
+			}
+
+			newPath, err := shamove(baseDir, path, "manifests")
+			if err != nil {
+				return err
+			}
+
+			manifests = append(manifests, newPath)
+		case strings.HasSuffix(path, ".manifest.json"):
+			newPath, err := shamove(baseDir, path, "manifests")
+			if err != nil {
+				return err
+			}
+			manifests = append(manifests, newPath)
+		default:
+			newPath, err := shamove(baseDir, path, "blobs")
+			if err != nil {
+				return err
+			}
+			blobs = append(blobs, newPath)
+		}
+
+		return nil
+	}); err != nil {
+		return err
 	}
-
-	// Deduplicate layers
-	slices.SortFunc(layers, func(a, b v1.Layer) int {
-		aDigest, _ := a.Digest()
-		bDigest, _ := b.Digest()
-		return cmp.Compare(aDigest.String(), bDigest.String())
-	})
-	layers = slices.Compact(layers)
-
-	// Deduplicate manifests
-	slices.SortFunc(manifests, func(a, b *manifestWithMediaType) int {
-		return cmp.Compare(a.Digest, b.Digest)
-	})
-	manifests = slices.Compact(manifests)
 
 	log.Info().
 		Str("bucket", *bucket).
 		Str("repository", repository).
 		Str("tag", tag).
-		Int("layers", len(layers)).
+		Int("layers", len(blobs)).
 		Int("manifests", len(manifests)).
 		Msg("Syncing objects")
 
@@ -164,32 +231,24 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(config.SyncS3MaxConcurrentUploads.Int())
 
-	// Layers are synced first to avoid making a tag available before all its blobs are available.
-	for _, layer := range layers {
+	for _, fname := range blobs {
 		g.Go(func() error {
-			digest, err := layer.Digest()
+			f, err := os.Open(fname)
 			if err != nil {
 				return err
 			}
+			defer f.Close()
 
-			key := filepath.Join(s3c.baseDir, "blobs", digest.String())
+			key := filepath.Join(s3c.baseDir, "blobs", filepath.Base(fname))
 
-			mediaType, err := layer.MediaType()
-			if err != nil {
-				return err
-			}
-
-			r, err := layer.Compressed()
-			if err != nil {
-				return err
-			}
+			mediaType := "application/vnd.docker.image.rootfs.diff.tar.gzip"
 
 			if err := syncObject(
 				ctx,
 				s3c,
 				key,
 				aws.String(string(mediaType)),
-				r,
+				f,
 			); err != nil {
 				return err
 			}
@@ -201,33 +260,39 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 		return err
 	}
 
-	// Sync the manifests
-	for _, manifest := range manifests {
+	for _, fname := range manifests {
 		g.Go(func() error {
-			manifest := manifest
+			key := filepath.Join(s3c.baseDir, "manifests", filepath.Base(fname))
 
-			return syncObject(
+			b, err := os.ReadFile(fname)
+			if err != nil {
+				return err
+			}
+
+			var mwmt manifestWithMediaType
+
+			if err := json.Unmarshal(b, &mwmt); err != nil {
+				return err
+			}
+
+			if mwmt.MediaType == "" {
+				mwmt.MediaType = "application/vnd.docker.distribution.manifest.v1+prettyjws"
+			}
+
+			if err := syncObject(
 				ctx,
 				s3c,
-				filepath.Join(s3c.baseDir, "manifests", manifest.Digest),
-				aws.String(manifest.MediaType),
-				bytes.NewReader(manifest.Manifest),
-			)
+				key,
+				aws.String(mwmt.MediaType),
+				bytes.NewReader(b),
+			); err != nil {
+				return err
+			}
+
+			return nil
 		})
 	}
-
 	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	// Tag is added last so it can be used to check for duplication.
-	if err := syncObject(
-		ctx,
-		s3c,
-		manifestKey(repository, tag),
-		aws.String(string(desc.MediaType)),
-		bytes.NewReader(desc.Manifest),
-	); err != nil {
 		return err
 	}
 
@@ -319,7 +384,7 @@ func syncObject(
 		Int64("size", fsize).
 		Msg("Uploading object")
 
-	dataCounter := s3DataCounter{
+	dataCounter := &s3DataCounter{
 		ctx:  ctx,
 		dest: s3c.dst,
 		f:    tmpFile,
