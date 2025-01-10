@@ -15,7 +15,7 @@ before:
 
 builds:
   - env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
     goarch:
@@ -25,7 +25,7 @@ builds:
     binary: docker-sync
     tags:
       - containers_image_docker_daemon_stub
-      #- containers_image_openpgp
+      - containers_image_openpgp
       - containers_image_storage_stub
       - containers_image_fulcio_stub
       - containers_image_rekor_stub
