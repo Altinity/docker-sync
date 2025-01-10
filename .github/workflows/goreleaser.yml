@@ -34,6 +34,9 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Install deps
+        run: sudo apt update && sudo apt install -y libgpgme-dev
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
