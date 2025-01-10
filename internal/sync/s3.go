@@ -84,7 +84,6 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 
 	bucketInitCacheKey := fmt.Sprintf("%s/%s", dst, *bucket)
 	if _, ok := bucketInitCache[bucketInitCacheKey]; !ok {
-		// FIXME: This only needs to be called once per bucket.
 		if err := syncObject(
 			ctx,
 			s3c,
