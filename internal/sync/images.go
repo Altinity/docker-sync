@@ -2,7 +2,6 @@ package sync
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,14 +11,20 @@ import (
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/containers/image/v5/copy"
+	"github.com/containers/image/v5/docker"
+	"github.com/containers/image/v5/signature"
+	"github.com/containers/image/v5/types"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
 func checkRateLimit(err error) error {
+	if err == nil {
+		return nil
+	}
+
 	if strings.Contains(err.Error(), "HAP429") || strings.Contains(err.Error(), "TOOMANYREQUESTS") {
 		log.Warn().
 			Msg("Rate limited by registry, backing off")
@@ -29,13 +34,13 @@ func checkRateLimit(err error) error {
 	return backoff.Permanent(err)
 }
 
-func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, dst string, tag string) error {
+func push(ctx context.Context, image *structs.Image, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
 		switch getRepositoryType(dst) {
 		case S3CompatibleRepository:
 			fields := strings.Split(dst, ":")
 
-			var fn func(context.Context, *remote.Descriptor, string, string, string) error
+			var fn func(context.Context, *structs.Image, string, string, string) error
 
 			switch fields[0] {
 			case "r2":
@@ -46,52 +51,57 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 				return fmt.Errorf("unsupported bucket destination: %s", dst)
 			}
 
-			if err := fn(ctx, desc, dst, fields[3], tag); err != nil {
-				if errors.Is(err, remote.ErrSchema1) {
-					return backoff.Permanent(fmt.Errorf("unsupported v1 schema"))
-				}
+			if err := fn(ctx, image, dst, fields[3], tag); err != nil {
 				return err
 			}
 
 			return nil
 		case OCIRepository:
-			pushAuth, _ := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+			srcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+			dstAuth, _ := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst))
 
-			pusher, err := remote.NewPusher(pushAuth)
+			dstRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", dst, tag))
 			if err != nil {
 				return err
 			}
 
-			dstTag, err := name.ParseReference(fmt.Sprintf("%s:%s", dst, tag))
+			srcRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", image.Source, tag))
 			if err != nil {
-				return fmt.Errorf("failed to parse tag: %w", err)
+				return err
 			}
 
-			dataCounter := &ociDataCounter{
-				ctx:  ctx,
-				dest: dst,
-				f:    desc,
+			srcCtx := &types.SystemContext{
+				DockerAuthConfig: srcAuth,
+			}
+			dstCtx := &types.SystemContext{
+				DockerAuthConfig: dstAuth,
 			}
 
-			if err := pusher.Push(ctx, dstTag, dataCounter); err != nil {
-				// FIXME: Work around bug in go-containerregistry.
-				// Unfortunately we lose the uploaded bytes telemetry.
-				if strings.Contains(err.Error(), "MANIFEST_BLOB_UNKNOWN") || strings.Contains(err.Error(), "INVALID") {
-					log.Warn().
-						Msg("Bug in go-containerregistry, falling back to skopeo")
-
-					skopeoSrcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository(), "src")
-					skopeoDstAuth, _ := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst), "dest")
-
-					return SkopeoCopy(ctx, fmt.Sprintf("%s:%s", image.GetSource(), tag), skopeoSrcAuth, fmt.Sprintf("%s:%s", dst, tag), skopeoDstAuth)
-				}
-				return checkRateLimit(err)
+			policy := &signature.Policy{Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()}}
+			policyContext, err := signature.NewPolicyContext(policy)
+			if err != nil {
+				return err
 			}
+
+			ch := make(chan types.ProgressProperties)
+			defer close(ch)
+
+			chCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go dockerDataCounter(chCtx, image.Source, dst, ch)
+
+			_, err = copy.Image(ctx, policyContext, dstRef, srcRef, &copy.Options{
+				SourceCtx:          srcCtx,
+				DestinationCtx:     dstCtx,
+				ImageListSelection: copy.CopyAllImages,
+				ProgressInterval:   time.Second,
+				Progress:           ch,
+			})
+
+			return checkRateLimit(err)
 		default:
 			return fmt.Errorf("unsupported repository type")
 		}
-
-		return nil
 	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(
 		backoff.WithInitialInterval(1*time.Minute),
 	), config.SyncMaxErrors.UInt64()), func(err error, dur time.Duration) {
@@ -105,45 +115,24 @@ func push(ctx context.Context, image *structs.Image, desc *remote.Descriptor, ds
 	})
 }
 
-func pull(ctx context.Context, puller *remote.Puller, image *structs.Image, tag string) (*remote.Descriptor, error) {
-	srcTag, err := name.ParseReference(fmt.Sprintf("%s:%s", image.Source, tag))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tag: %w", err)
-	}
-
-	var desc *remote.Descriptor
-
-	if err := backoff.RetryNotify(func() error {
-		desc, err = puller.Get(ctx, srcTag)
-		if err != nil {
-			return checkRateLimit(err)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(
-		backoff.WithInitialInterval(1*time.Minute),
-	), config.SyncMaxErrors.UInt64()), func(err error, dur time.Duration) {
-		log.Error().
-			Err(err).
-			Dur("backoff", dur).
-			Str("image", image.Source).
-			Str("tag", tag).
-			Msg("Pull failed")
-	}); err != nil {
-		return nil, err
-	}
-
-	return desc, nil
-}
-
 func SyncImage(ctx context.Context, image *structs.Image) error {
 	log.Info().
 		Str("image", image.Source).
 		Strs("targets", image.Targets).
 		Msg("Syncing image")
 
-	srcAuth, srcAuthName := getAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcRef, err := docker.ParseReference(fmt.Sprintf("//%s", image.Source))
+	if err != nil {
+		return err
+	}
+	image.SrcRef = srcRef
 
-	srcTags, err := listOCITags(ctx, srcAuth, image, image.GetSource(), "")
+	srcAuth, srcAuthName := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcCtx := &types.SystemContext{
+		DockerAuthConfig: srcAuth,
+	}
+
+	srcTags, err := docker.GetRepositoryTags(ctx, srcCtx, srcRef)
 	if err != nil {
 		return err
 	}
@@ -162,11 +151,6 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		Str("auth", srcAuthName).
 		Int("tags", len(srcTags)).
 		Msg("Found source tags")
-
-	srcPuller, err := remote.NewPuller(srcAuth)
-	if err != nil {
-		return err
-	}
 
 	// Get all tags from targets
 	var dstTags []string
@@ -193,9 +177,18 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 
 			continue
 		case OCIRepository:
-			auth, dstAuthName := getAuth(image.GetRegistry(dst), image.GetRepository(dst))
+			dstRef, err := docker.ParseReference(fmt.Sprintf("//%s", dst))
+			if err != nil {
+				return err
+			}
 
-			tags, err := listOCITags(ctx, auth, image, dst, dst)
+			dstAuth, dstAuthName := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst))
+
+			dstCtx := &types.SystemContext{
+				DockerAuthConfig: dstAuth,
+			}
+
+			tags, err := docker.GetRepositoryTags(ctx, dstCtx, dstRef)
 			if err != nil {
 				return err
 			}
@@ -208,7 +201,9 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 					Str("auth", dstAuthName).
 					Msg("Found destination tags")
 
-				dstTags = append(dstTags, tags...)
+				for _, tag := range tags {
+					dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, tag))
+				}
 			}
 		}
 	}
@@ -264,13 +259,8 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 				Strs("targets", image.Targets).
 				Msg("Syncing tag")
 
-			desc, err := pull(ctx, srcPuller, image, tag)
-			if err != nil {
-				return err
-			}
-
 			for _, dst := range actualDsts {
-				if err := push(ctx, image, desc, dst, tag); err != nil {
+				if err := push(ctx, image, dst, tag); err != nil {
 					return err
 				}
 			}

@@ -6,9 +6,7 @@ import (
 )
 
 type manifestWithMediaType struct {
-	Digest    string
-	MediaType string
-	Manifest  []byte
+	MediaType string `json:"mediaType"`
 }
 
 type s3Client struct {

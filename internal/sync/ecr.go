@@ -9,8 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/aws/aws-sdk-go/service/ecrpublic"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/rs/zerolog/log"
 )
 
@@ -36,14 +34,14 @@ func newEcrPublicClient() (*ecrpublic.ECRPublic, error) {
 	return ecrpublic.New(sess), nil
 }
 
-func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
+func authEcrPrivate(repository string) (string, string) {
 	client, err := newEcrClient()
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Failed to create ECR client, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	out, err := client.GetAuthorizationToken(nil)
@@ -52,14 +50,14 @@ func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
 			Err(err).
 			Msg("Failed to get ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	if len(out.AuthorizationData) == 0 {
 		log.Error().
 			Msg("No authorization data returned from ECR, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	b, err := base64.StdEncoding.DecodeString(*out.AuthorizationData[0].AuthorizationToken)
@@ -68,7 +66,7 @@ func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
 			Err(err).
 			Msg("Failed to decode ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	parts := strings.SplitN(string(b), ":", 2)
@@ -76,7 +74,7 @@ func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
 		log.Error().
 			Msg("Invalid ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	if _, err := client.CreateRepository(&ecr.CreateRepositoryInput{
@@ -87,22 +85,18 @@ func authEcrPrivate(repository string) (remote.Option, *authn.Basic) {
 			Msg("Failed to create ECR repository, pushing might fail")
 	}
 
-	basic := &authn.Basic{
-		Username: parts[0],
-		Password: parts[1],
-	}
-	return remote.WithAuth(basic), basic
+	return parts[0], parts[1]
 }
 
 // FIXME: duplicated code.
-func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
+func authEcrPublic(repository string) (string, string) {
 	client, err := newEcrPublicClient()
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Failed to create ECR client, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	out, err := client.GetAuthorizationToken(nil)
@@ -111,7 +105,7 @@ func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
 			Err(err).
 			Msg("Failed to get ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	b, err := base64.StdEncoding.DecodeString(*out.AuthorizationData.AuthorizationToken)
@@ -120,7 +114,7 @@ func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
 			Err(err).
 			Msg("Failed to decode ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	parts := strings.SplitN(string(b), ":", 2)
@@ -128,7 +122,7 @@ func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
 		log.Error().
 			Msg("Invalid ECR authorization token, falling back to keychain")
 
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
+		return "", ""
 	}
 
 	if _, err := client.CreateRepository(&ecrpublic.CreateRepositoryInput{
@@ -139,9 +133,5 @@ func authEcrPublic(repository string) (remote.Option, *authn.Basic) {
 			Msg("Failed to create ECR repository, pushing might fail")
 	}
 
-	basic := &authn.Basic{
-		Username: parts[0],
-		Password: parts[1],
-	}
-	return remote.WithAuth(basic), basic
+	return parts[0], parts[1]
 }
