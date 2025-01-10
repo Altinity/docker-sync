@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Altinity/docker-sync/structs"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 func getR2Session(url string) (*s3.S3, *string, error) {
@@ -43,11 +43,11 @@ func getR2Session(url string) (*s3.S3, *string, error) {
 	return s3.New(newSession), bucket, nil
 }
 
-func pushR2(ctx context.Context, desc *remote.Descriptor, dst string, repository string, tag string) error {
+func pushR2(ctx context.Context, image *structs.Image, dst string, repository string, tag string) error {
 	s3Session, bucket, err := getR2Session(dst)
 	if err != nil {
 		return err
 	}
 
-	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, desc, tag)
+	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, image, tag)
 }

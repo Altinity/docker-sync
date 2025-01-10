@@ -18,3 +18,7 @@ var Syncs = must(meter.Int64Counter("syncs",
 var UploadedBytes = must(meter.Int64Counter("uploaded_bytes",
 	metric.WithDescription("Total number of bytes uploaded"),
 ))
+
+var DownloadedBytes = must(meter.Int64Counter("downloaded_bytes",
+	metric.WithDescription("Total number of bytes downloaded"),
+))

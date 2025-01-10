@@ -5,8 +5,7 @@ import (
 
 	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/structs"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/containers/image/v5/types"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,7 +28,7 @@ func getObjectStorageAuth(url string) (string, string, error) {
 	return "", "", fmt.Errorf("no auth found for %s", url)
 }
 
-func getSkopeoAuth(url string, name string, side string) ([]string, string) {
+func getSkopeoAuth(url string, name string) (*types.DockerAuthConfig, string) {
 	repositories := config.SyncRegistries.Repositories()
 
 	var repo *structs.Repository
@@ -45,22 +44,18 @@ func getSkopeoAuth(url string, name string, side string) ([]string, string) {
 		return nil, "default"
 	}
 
-	if repo.Auth.Token != "" {
-		return []string{fmt.Sprintf("--%s-registry-token", side), repo.Auth.Token}, "token"
-	}
-
 	if repo.Auth.Username != "" && repo.Auth.Password != "" {
-		return []string{fmt.Sprintf("--%s-username", side), repo.Auth.Username, fmt.Sprintf("--%s-password", side), repo.Auth.Password}, "basic"
+		return &types.DockerAuthConfig{Username: repo.Auth.Username, Password: repo.Auth.Password}, "basic"
 	}
 
 	switch repo.Auth.Helper {
 	case "":
 	case "ecr":
-		_, basic := authEcrPrivate(name)
-		return []string{fmt.Sprintf("--%s-username", side), basic.Username, fmt.Sprintf("--%s-password", side), basic.Password}, "ecr"
+		username, password := authEcrPrivate(name)
+		return &types.DockerAuthConfig{Username: username, Password: password}, "ecr"
 	case "ecr-public":
-		_, basic := authEcrPublic(name)
-		return []string{fmt.Sprintf("--%s-username", side), basic.Username, fmt.Sprintf("--%s-password", side), basic.Password}, "ecr-public"
+		username, password := authEcrPublic(name)
+		return &types.DockerAuthConfig{Username: username, Password: password}, "ecr-public"
 	default:
 		log.Error().
 			Str("helper", repo.Auth.Helper).
@@ -68,50 +63,4 @@ func getSkopeoAuth(url string, name string, side string) ([]string, string) {
 	}
 
 	return nil, "default"
-}
-
-func getAuth(url string, name string) (remote.Option, string) {
-	repositories := config.SyncRegistries.Repositories()
-
-	var repo *structs.Repository
-
-	for _, r := range repositories {
-		if r.URL == url {
-			repo = r
-			break
-		}
-	}
-
-	if repo == nil {
-		return remote.WithAuthFromKeychain(authn.DefaultKeychain), "default"
-	}
-
-	if repo.Auth.Token != "" {
-		return remote.WithAuth(&authn.Bearer{
-			Token: repo.Auth.Token,
-		}), "token"
-	}
-
-	if repo.Auth.Username != "" && repo.Auth.Password != "" {
-		return remote.WithAuth(&authn.Basic{
-			Username: repo.Auth.Username,
-			Password: repo.Auth.Password,
-		}), "basic"
-	}
-
-	switch repo.Auth.Helper {
-	case "":
-	case "ecr":
-		creds, _ := authEcrPrivate(name)
-		return creds, "ecr"
-	case "ecr-public":
-		creds, _ := authEcrPublic(name)
-		return creds, "ecr-public"
-	default:
-		log.Error().
-			Str("helper", repo.Auth.Helper).
-			Msg("Unknown auth helper, falling back to keychain")
-	}
-
-	return remote.WithAuthFromKeychain(authn.DefaultKeychain), "default"
 }
