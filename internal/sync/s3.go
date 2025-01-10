@@ -160,6 +160,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 
 	var blobs []string
 	var manifests []string
+	var tagManifest string
 
 	// walk all files
 	if err := filepath.WalkDir(tmpDir, func(path string, d fs.DirEntry, err error) error {
@@ -193,7 +194,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 					return err
 				}
 
-				manifests = append(manifests, newPath)
+				tagManifest = newPath
 
 				return nil
 			}(); err != nil {
@@ -224,6 +225,9 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 	}); err != nil {
 		return err
 	}
+
+	// Adds the tag manifest last to all others are uploaded first
+	manifests = append(manifests, tagManifest)
 
 	log.Info().
 		Str("bucket", *bucket).
