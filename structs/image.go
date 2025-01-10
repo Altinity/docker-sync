@@ -3,15 +3,15 @@ package structs
 import (
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/containers/image/v5/types"
 )
 
 type Image struct {
-	Source      string                   `json:"source" yaml:"source"`
-	Targets     []string                 `json:"targets" yaml:"targets"`
-	MutableTags []string                 `json:"mutableTags" yaml:"mutableTags"`
-	IgnoredTags []string                 `json:"ignoredTags" yaml:"ignoredTags"`
-	Auths       map[string]remote.Option `json:"-" yaml:"-"`
+	Source      string               `json:"source" yaml:"source"`
+	Targets     []string             `json:"targets" yaml:"targets"`
+	MutableTags []string             `json:"mutableTags" yaml:"mutableTags"`
+	IgnoredTags []string             `json:"ignoredTags" yaml:"ignoredTags"`
+	SrcRef      types.ImageReference `json:"-" yaml:"-"`
 }
 
 func (i *Image) GetSource() string {

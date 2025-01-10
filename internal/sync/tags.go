@@ -1,16 +1,12 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/Altinity/docker-sync/structs"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 func listS3Tags(dst string, fields []string) ([]string, error) {
@@ -49,40 +45,4 @@ func listS3Tags(dst string, fields []string) ([]string, error) {
 	}
 
 	return tags, nil
-}
-
-func listOCITags(ctx context.Context, auth remote.Option, image *structs.Image, dst string, includeRepo string) ([]string, error) {
-	puller, err := remote.NewPuller(auth)
-	if err != nil {
-		return nil, err
-	}
-
-	repo, err := name.NewRepository(image.GetRepository(dst))
-	if err != nil {
-		return nil, err
-	}
-
-	lister, err := puller.Lister(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
-
-	var allTags []string
-
-	for lister.HasNext() {
-		tags, err := lister.Next(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, tag := range tags.Tags {
-			if includeRepo == "" {
-				allTags = append(allTags, tag)
-			} else {
-				allTags = append(allTags, fmt.Sprintf("%s:%s", includeRepo, tag))
-			}
-		}
-	}
-
-	return allTags, nil
 }

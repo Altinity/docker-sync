@@ -1,11 +1,12 @@
 package sync
 
 import (
-	"bytes"
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
-
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func getRepositoryType(dst string) RepositoryType {
@@ -19,29 +20,24 @@ func getRepositoryType(dst string) RepositoryType {
 	return OCIRepository
 }
 
-func containsManifest(manifests []*manifestWithMediaType, manifest []byte) bool {
-	for _, m := range manifests {
-		if bytes.Equal(m.Manifest, manifest) {
-			return true
-		}
-	}
-	return false
-}
-
-func appendLayerIfNotExists(layers []v1.Layer, layer v1.Layer) []v1.Layer {
-	layerDigest, err := layer.Digest()
+func shamove(baseDir string, oldPath string, folder string) (string, error) {
+	f, err := os.Open(oldPath)
 	if err != nil {
-		return layers
+		return "", err
 	}
-	for _, l := range layers {
-		ldigest, _ := l.Digest()
-		if ldigest == layerDigest {
-			return layers
-		}
-	}
-	return append(layers, layer)
-}
+	defer f.Close()
 
-func manifestKey(repository string, tag string) string {
-	return filepath.Join("v2", repository, "manifests", tag)
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	digest := fmt.Sprintf("sha256:%x", h.Sum(nil))
+
+	newPath := filepath.Join(baseDir, folder, digest)
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return "", err
+	}
+
+	return newPath, nil
 }
