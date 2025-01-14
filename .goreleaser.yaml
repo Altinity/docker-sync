@@ -23,6 +23,10 @@ builds:
       - arm64
     main: ./cmd/dockersync
     binary: docker-sync
+    tags:
+      - containers_image_docker_daemon_stub
+      - containers_image_openpgp
+      - containers_image_storage_stub
 
 archives:
   - format: tar.gz
