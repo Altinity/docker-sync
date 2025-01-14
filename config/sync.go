@@ -37,6 +37,7 @@ var (
 				"targets": []string{
 					"docker.io/library/ubuntu",
 				},
+				"tags": []string{},
 				"mutableTags": []string{
 					"latest",
 				},

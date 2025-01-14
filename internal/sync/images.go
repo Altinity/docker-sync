@@ -132,9 +132,15 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		DockerAuthConfig: srcAuth,
 	}
 
-	srcTags, err := docker.GetRepositoryTags(ctx, srcCtx, srcRef)
-	if err != nil {
-		return err
+	var srcTags []string
+
+	if len(image.Tags) > 0 {
+		srcTags = image.Tags
+	} else {
+		srcTags, err = docker.GetRepositoryTags(ctx, srcCtx, srcRef)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(srcTags) == 0 {
