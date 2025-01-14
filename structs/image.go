@@ -11,6 +11,7 @@ type Image struct {
 	Targets     []string             `json:"targets" yaml:"targets"`
 	MutableTags []string             `json:"mutableTags" yaml:"mutableTags"`
 	IgnoredTags []string             `json:"ignoredTags" yaml:"ignoredTags"`
+	Tags        []string             `json:"tags" yaml:"tags"`
 	SrcRef      types.ImageReference `json:"-" yaml:"-"`
 }
 
