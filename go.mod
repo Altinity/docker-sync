@@ -1,6 +1,6 @@
 module github.com/Altinity/docker-sync
 
-go 1.23.3
+go 1.23.6
 
 require (
 	github.com/aws/aws-sdk-go v1.55.5
