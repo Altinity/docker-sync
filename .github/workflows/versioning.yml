@@ -27,3 +27,4 @@ jobs:
   release:
     needs: [versioning]
     uses: ./.github/workflows/release.yml
+    secrets: inherit

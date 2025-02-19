@@ -1,0 +1,388 @@
+ecr:
+  region: us-east-1
+logging:
+  colors: true
+  format: text
+  level: INFO
+  output: stdout
+  timeformat: "15:04:05"
+sync:
+  registries:
+    - auth:
+        helper:
+        password: 7a9ba3f9fb7e6cf4e3076383ddc4709f5f6b80bba874f20bd676debaa025ddac
+        token:
+        username: 17aeecce868099f2dd339bde0d96f423
+      name: R2
+      url: r2:30b2944b5174302fb2188bb48399c72b:cr-enam
+
+    - auth:
+        helper:
+        password: 3d2dc017-cc1a-4a79-8b18-8fc0505771d1
+        token:
+        username: altinityinfra
+      name: Docker Hub
+      url: docker.io
+  s3:
+    maxConcurrentUploads: 5
+    objectCache:
+      enabled: true
+      expirationTime: 120m
+      capacity: 100000
+  images:
+    - source: altinity/clickhouse-backup
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/clickhouse-backup
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/clickhouse-operator
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/clickhouse-operator
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/clickhouse-server
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/clickhouse-server
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/cloud-connect
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/cloud-connect
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/cloud-tag
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/cloud-tag
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/cluster-autoscaler
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/cluster-autoscaler
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/coroot
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/coroot
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/coroot-exporter
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/coroot-exporter
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/coroot-node-agent
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/coroot-node-agent
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/crtd
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/crtd
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/csi-attacher
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/csi-attacher
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/csi-node-driver-registrar
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/csi-node-driver-registrar
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/csi-provisioner
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/csi-provisioner
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/csi-resizer
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/csi-resizer
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/ebs-params-controller
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/ebs-params-controller
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/edge-proxy
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/edge-proxy
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/flannel
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/flannel
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/flannel-cni-plugin
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/flannel-cni-plugin
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/fluent-bit
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/fluent-bit
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/fluent-bit-plugin-loki
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/fluent-bit-plugin-loki
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/grafana
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/grafana
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/haproxy
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/haproxy
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/hcloud-cloud-controller-manager
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/hcloud-cloud-controller-manager
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/hcloud-csi-driver
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/hcloud-csi-driver
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+        - buildcache
+
+    - source: altinity/hetznercloud-csi-driver-overseer
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/hetznercloud-csi-driver-overseer
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+        - buildcache
+
+    - source: k8s.gcr.io/kube-state-metrics/kube-state-metrics
+      targets:
+        - docker.io/altinity/kube-state-metrics
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/kube-state-metrics
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/kube-state-metrics
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/livenessprobe
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/livenessprobe
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    #- source: grafana/loki
+    #  targets:
+    #    - docker.io/altinity/loki
+
+    #  mutableTags:
+    #    - latest
+
+    #  ignoredTags:
+
+    - source: altinity/loki
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/loki
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/metrics-exporter
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/metrics-exporter
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/nginx
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/nginx
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: prom/node-exporter
+      targets:
+        - docker.io/altinity/node-exporter
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/node-exporter
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/node-exporter
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/prometheus
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/prometheus
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/promtail
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/promtail
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/statuscheck
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/statuscheck
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+    - source: altinity/haproxy
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/haproxy
+
+      mutableTags:
+        - latest
+
+      ignoredTags:
+
+  interval: 30m
+  maxerrors: 0
+
+telemetry:
+  enabled: true
+  metrics:
+    exporter: prometheus
+    prometheus:
+      address: 0.0.0.0:9090
+      path: /metrics
+    stdout:
+      interval: 5s
