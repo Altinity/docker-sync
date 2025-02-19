@@ -1,9 +1,10 @@
-name: goreleaser
+name: Create Release
 
 on:
   push:
     tags:
       - "*"
+  workflow_call:
 
 permissions:
   contents: write
@@ -38,7 +39,7 @@ jobs:
         run: sudo apt update && sudo apt install -y libgpgme-dev
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
