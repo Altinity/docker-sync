@@ -15,7 +15,6 @@ linters:
     - errname
     #- errorlint
     - exhaustive
-    - exportloopref
     #- funlen
     - goconst
     - gocritic
@@ -31,7 +30,7 @@ linters:
     #- prealloc
     - predeclared
     - staticcheck
-    - tenv
+    - usetesting
     - tparallel
     - typecheck
     - unconvert
