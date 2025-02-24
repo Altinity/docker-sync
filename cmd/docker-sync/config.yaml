@@ -1,0 +1,54 @@
+ecr:
+  region: us-east-1
+logging:
+  colors: true
+  format: text
+  level: INFO
+  output: stdout
+  timeformat: "15:04:05"
+sync:
+  registries:
+    - auth:
+        helper:
+        password: 7a9ba3f9fb7e6cf4e3076383ddc4709f5f6b80bba874f20bd676debaa025ddac
+        token:
+        username: 17aeecce868099f2dd339bde0d96f423
+      name: R2
+      url: r2:30b2944b5174302fb2188bb48399c72b:cr-enam
+
+    - auth:
+        helper:
+        password: 3d2dc017-cc1a-4a79-8b18-8fc0505771d1
+        token:
+        username: altinityinfra
+      name: Docker Hub
+      url: docker.io
+  s3:
+    maxConcurrentUploads: 5
+    objectCache:
+      enabled: true
+      expirationTime: 120m
+      capacity: 100000
+  images:
+    - source: altinity/snapshot-controller
+      targets:
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/snapshot-controller
+
+      mutableTags:
+        - latest
+      tags: ["v6.2.1"]
+
+      ignoredTags:
+
+  interval: 30m
+  maxerrors: 0
+
+telemetry:
+  enabled: true
+  metrics:
+    exporter: prometheus
+    prometheus:
+      address: 0.0.0.0:9090
+      path: /metrics
+    stdout:
+      interval: 5s

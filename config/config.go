@@ -19,7 +19,7 @@ func InitConfig(cfgFile string) error {
 		viper.SetConfigFile(cfgFile)
 	} else {
 		viper.SetConfigName("config")
-		viper.AddConfigPath("$HOME/.dockersync")
+		viper.AddConfigPath("$HOME/.docker-sync")
 		viper.AddConfigPath(".")
 		viper.SetConfigType("yaml")
 	}
