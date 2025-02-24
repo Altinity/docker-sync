@@ -17,7 +17,7 @@ import (
 var cfgFile string
 
 var rootCmd = &cobra.Command{
-	Use:   "dockersync",
+	Use:   "docker-sync",
 	Short: "Keep your Docker images in sync",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		cmd.Annotations = make(map[string]string)

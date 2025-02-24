@@ -18,10 +18,12 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
+      - darwin
+      - windows
     goarch:
       - amd64
       - arm64
-    main: ./cmd/dockersync
+    main: ./cmd/docker-sync
     binary: docker-sync
     tags:
       - containers_image_docker_daemon_stub

@@ -25,63 +25,64 @@ Build the project:
 ```console
 make
 ```
-To run a one-off synchronization, you can run `dist/dockersync sync`.
 
-``` sh
-dist/dockersync --source docker.io/library/ubuntu --targets r2:blablabla:docker-sync-test:ubuntu --url1 docker.io --username1 foo --password1 bar --url2 r2:blablabla:docker-sync-test --username2 foo --password2 bar
+To run a one-off synchronization, you can run `dist/docker-sync sync`.
+
+```sh
+dist/docker-sync --source docker.io/library/ubuntu --target r2:blablabla:docker-sync-test:ubuntu --source-username foo --source-password bar --target-username foo --target-password bar
 ```
 
-Run `dist/dockersync sync --help` for more configuration options.
+Run `dist/docker-sync sync --help` for more configuration options.
 
 ## Configuration
 
 Write the default config file:
 
 ```console
-dist/dockersync writeConfig -o config.yaml`
+dist/docker-sync writeConfig -o config.yaml`
 ```
 
 Edit the config file accordingly, then run:
 
 ```console
-dist/dockersync
+dist/docker-sync
 ```
 
-The default configuration looks like this: 
+The default configuration looks like this:
 
 ```yaml
 ecr:
-    region: us-east-1
+  region: us-east-1
 logging:
-    colors: true
-    format: text
-    level: INFO
-    output: stdout
-    timeformat: "15:04:05"
+  colors: true
+  format: text
+  level: INFO
+  output: stdout
+  timeformat: "15:04:05"
 sync:
-    images:
-        - source: docker.io/library/ubuntu
-          targets:
-            - docker.io/kamushadenes/ubuntu
-    interval: 5m
-    maxerrors: 5
-    registries:
-        - auth:
-            helper: ""
-            password: ""
-            token: ""
-            username: ""
-          name: Docker Hub
-          url: docker.io
+  images:
+    - source: docker.io/library/ubuntu
+      targets:
+        - docker.io/kamushadenes/ubuntu
+  interval: 5m
+  maxerrors: 5
+  registries:
+    - auth:
+        helper: ""
+        password: ""
+        token: ""
+        username: ""
+      name: Docker Hub
+      url: docker.io
 telemetry:
-    enabled: false
-    metrics:
-        exporter: prometheus
-        prometheus:
-            address: 127.0.0.1:9090
-            path: /metrics
-        stdout:
-            interval: 5s
+  enabled: false
+  metrics:
+    exporter: prometheus
+    prometheus:
+      address: 127.0.0.1:9090
+      path: /metrics
+    stdout:
+      interval: 5s
 ```
 
 The `sync` section is where you define the images you want to keep in sync. The `interval` is the time between syncs, and `maxerrors` is the maximum number of errors before the sync is stopped and the program exits.
@@ -92,14 +93,14 @@ To provide authentication for registries, put them under `sync.registries` in th
 
 ```yaml
 sync:
-      registries:
-            - auth:
-                helper: "" 
-                password: ""
-                token: ""
-                username: ""
-              name: Docker Hub
-              url: docker.io
+  registries:
+    - auth:
+        helper: ""
+        password: ""
+        token: ""
+        username: ""
+      name: Docker Hub
+      url: docker.io
 ```
 
 #### ECR
@@ -108,14 +109,14 @@ To authenticate against ECR, you can leave `password`, `token` and `username` em
 
 ```yaml
 sync:
-      registries:
-            - auth:
-                helper: ecr
-                password: ""
-                token: ""
-                username: ""
-              name: ECR
-              url: 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  registries:
+    - auth:
+        helper: ecr
+        password: ""
+        token: ""
+        username: ""
+      name: ECR
+      url: 123456789012.dkr.ecr.us-east-1.amazonaws.com
 ```
 
 The same applies to ecr-public, since it uses the url prefix to differentiate between the two.
@@ -170,7 +171,7 @@ sync:
             - r2:f6934f56ce237241104dbe9302cee786:docker-sync-test:ubuntu # r2:<endpoint>:<bucket>:<image>
       registries:
             - auth:
-                helper: "" 
+                helper: ""
                 password: "SECRET_ACCES_KEY"
                 token: ""
                 username: "ACCESS_KEY_ID"
@@ -224,7 +225,7 @@ sync:
             - r3:us-east-1:docker-sync-test:ubuntu # s3:<region>:<bucket>:<image>
       registries:
             - auth:
-                helper: "" 
+                helper: ""
                 password: "SECRET_ACCES_KEY"
                 token: ""
                 username: "ACCESS_KEY_ID"
