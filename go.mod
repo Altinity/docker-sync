@@ -7,7 +7,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/containers/image/v5 v5.34.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.21.0
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cast v1.7.1
 	github.com/spf13/cobra v1.9.1
@@ -87,7 +87,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/proglottis/gpgme v0.1.4 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.61.0 // indirect
+	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sagikazarmark/locafero v0.6.0 // indirect
