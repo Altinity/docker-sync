@@ -1,10 +1,26 @@
 name: Create Release
 
 on:
-  push:
-    tags:
-      - "*"
   workflow_call:
+    inputs:
+      current-tag:
+        description: The tag to build
+        required: true
+        type: string
+      extra_args:
+        description: Extra args for go-releaser, for example '--snapshot'
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      current-tag:
+        description: The tag to build
+        required: true
+        type: string
+      extra_args:
+        description: Extra args for go-releaser, for example '--snapshot'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -16,7 +32,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.current-tag }}
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -43,6 +61,7 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: release --clean ${{ inputs.extra_args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.current-tag }}
