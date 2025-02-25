@@ -16,13 +16,13 @@ sync:
       name: R2
       url: r2:30b2944b5174302fb2188bb48399c72b:cr-enam
 
-    - auth:
-        helper:
-        password: 3d2dc017-cc1a-4a79-8b18-8fc0505771d1
-        token:
-        username: altinityinfra
-      name: Docker Hub
-      url: docker.io
+    #- auth:
+    #    helper:
+    #    password: 3d2dc017-cc1a-4a79-8b18-8fc0505771d1
+    #    token:
+    #    username: altinityinfra
+    #  name: Docker Hub
+    #   url: docker.io
   s3:
     maxConcurrentUploads: 5
     objectCache:
@@ -30,13 +30,13 @@ sync:
       expirationTime: 120m
       capacity: 100000
   images:
-    - source: altinity/snapshot-controller
+    - source: zookeeper
       targets:
-        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:altinity/snapshot-controller
+        - r2:30b2944b5174302fb2188bb48399c72b:cr-enam:zookeeper
 
       mutableTags:
         - latest
-      tags: ["v6.2.1"]
+      tags: ["3.8.4"]
 
       ignoredTags:
 
