@@ -7,10 +7,13 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   versioning:
     runs-on: ubuntu-latest
+    outputs:
+      current-tag: ${{ steps.calculate-version.outputs.version-string }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,3 +31,5 @@ jobs:
     needs: [versioning]
     uses: ./.github/workflows/release.yml
     secrets: inherit
+    with:
+      current-tag: v${{ needs.versioning.outputs.current-tag }}
