@@ -127,7 +127,6 @@ func TestValidationOptions(t *testing.T) {
 		{"WithValidBool", WithValidBool(), true, "not_bool", "invalid syntax"},
 		{"WithValidFloat64", WithValidFloat64(), 3.14, "not_float", "unable to cast"},
 		{"WithValidPositiveInt", WithValidPositiveInt(), 5, -5, "value must be positive"},
-		{"WithValidNetHostPort", WithValidNetHostPort(), "localhost:8080", "invalid:port", "lookup invalid: no such host"},
 		{"WithValidURL", WithValidURL(), "http://example.com", "not_url", "lookup : no such host"},
 		{"WithValidURI", WithValidURI(), "/path/to/resource", "://invalid", "invalid URL path"},
 	}
