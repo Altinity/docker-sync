@@ -12,17 +12,14 @@ import (
 func getObjectStorageAuth(url string) (string, string, error) {
 	repositories := config.SyncRegistries.Repositories()
 
-	var repo *structs.Repository
+	fmt.Println(config.SyncRegistries)
 
 	for _, r := range repositories {
 		if r.URL == url {
-			repo = r
-			break
+			if r.Auth.Username != "" && r.Auth.Password != "" {
+				return r.Auth.Username, r.Auth.Password, nil
+			}
 		}
-	}
-
-	if repo.Auth.Username != "" && repo.Auth.Password != "" {
-		return repo.Auth.Username, repo.Auth.Password, nil
 	}
 
 	return "", "", fmt.Errorf("no auth found for %s", url)

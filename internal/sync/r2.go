@@ -20,6 +20,10 @@ func getR2Session(url string) (*s3.S3, *string, error) {
 		return nil, nil, fmt.Errorf("invalid R2 destination: %s, format is r2:<endpoint>:<bucket>:<image>", url)
 	}
 
+	if fields[0] != "r2" {
+		return nil, nil, fmt.Errorf("invalid protocol: %s, expected r2", fields[0])
+	}
+
 	accessKey, secretKey, err := getObjectStorageAuth(strings.Join(fields[:3], ":"))
 	if err != nil {
 		return nil, nil, err
