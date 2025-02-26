@@ -1,6 +1,7 @@
 package structs
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/containers/image/v5/types"
@@ -34,7 +35,7 @@ func (i *Image) GetRegistry(url string) string {
 		return strings.Join(fields[:2], "/")
 	}
 
-	if len(fields) == 2 {
+	if len(fields) == 1 || len(fields) == 2 {
 		return "docker.io"
 	}
 
@@ -63,6 +64,9 @@ func (i *Image) GetRepository(url string) string {
 	// Omitted docker.io
 	if len(fields) == 2 {
 		return url
+	}
+	if len(fields) == 1 {
+		return fmt.Sprintf("library/%s", url)
 	}
 
 	if strings.HasPrefix(url, "public.ecr.aws") {

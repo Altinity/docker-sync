@@ -19,3 +19,7 @@
 
 # Go workspace file
 go.work
+
+config.yaml
+config.yaml_old
+docker-sync

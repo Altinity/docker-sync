@@ -399,7 +399,17 @@ func WithValidURL() KeyOption {
 			return fmt.Errorf("invalid host %q: %w", u.Hostname(), err)
 		}
 
-		p, err := strconv.ParseInt(u.Port(), 10, 64)
+		port := u.Port()
+		if port == "" {
+			switch u.Scheme {
+			case "http":
+				port = "80"
+			case "https":
+				port = "443"
+			}
+		}
+
+		p, err := strconv.ParseInt(port, 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid port %q: %w", u.Port(), err)
 		}

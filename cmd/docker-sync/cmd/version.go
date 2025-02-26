@@ -11,7 +11,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Gets docker-sync version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(config.Version)
+		fmt.Fprintln(cmd.OutOrStdout(), config.Version)
 	},
 }
 

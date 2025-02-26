@@ -19,14 +19,14 @@ var writeConfigCmd = &cobra.Command{
 			settings := viper.AllSettings()
 			yamlSettings, err := yaml.Marshal(settings)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(cmd.OutOrStderr(), err)
 				os.Exit(1)
 			}
 
-			fmt.Println(string(yamlSettings))
+			fmt.Fprintln(cmd.OutOrStdout(), string(yamlSettings))
 		} else {
 			if err := viper.SafeWriteConfigAs(outFile); err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(cmd.OutOrStderr(), err)
 				os.Exit(1)
 			}
 		}
