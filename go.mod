@@ -13,10 +13,10 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
-	go.opentelemetry.io/otel v1.33.0
+	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.55.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.33.0
-	go.opentelemetry.io/otel/metric v1.33.0
+	go.opentelemetry.io/otel/metric v1.34.0
 	go.opentelemetry.io/otel/sdk v1.33.0
 	go.opentelemetry.io/otel/sdk/metric v1.33.0
 	go.uber.org/multierr v1.11.0
@@ -112,7 +112,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.9.1 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/otel/trace v1.33.0 // indirect
+	go.opentelemetry.io/otel/trace v1.34.0 // indirect
 	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/exp v0.0.0-20241217172543-b2144cdd0a67 // indirect
 	golang.org/x/net v0.34.0 // indirect
