@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Altinity/docker-sync/config"
@@ -58,7 +59,6 @@ func cleanupTestData(t *testing.T) {
 
 func TestGetObjectStorageAuth(t *testing.T) {
 	setupAWSEnv(t)
-	defer cleanupAWSEnv(t)
 	setupTestData(t)
 	defer cleanupTestData(t)
 
@@ -103,7 +103,6 @@ func TestGetObjectStorageAuth(t *testing.T) {
 
 func TestGetSkopeoAuth(t *testing.T) {
 	setupAWSEnv(t)
-	defer cleanupAWSEnv(t)
 	setupTestData(t)
 	defer cleanupTestData(t)
 
@@ -168,7 +167,7 @@ func TestGetSkopeoAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authConfig, authType := getSkopeoAuth(tt.url, tt.imageName)
+			authConfig, authType := getSkopeoAuth(context.Background(), tt.url, tt.imageName)
 			assert.Equal(t, tt.expectedAuthType, authType)
 			tt.checkAuthConfig(t, authConfig)
 		})

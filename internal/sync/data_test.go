@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// MockReader implements io.ReadSeeker for testing
+// MockReader implements io.ReadSeeker for testing.
 type MockReader struct {
 	*strings.Reader
 }

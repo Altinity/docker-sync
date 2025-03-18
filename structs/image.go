@@ -42,6 +42,9 @@ func (i *Image) GetRegistry(url string) string {
 	return fields[0]
 }
 
+
+
+
 func (i *Image) GetSourceRepository() string {
 	return i.GetRepository(i.Source)
 }

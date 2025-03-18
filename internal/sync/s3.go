@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,18 +18,19 @@ import (
 	"strings"
 	"time"
 
+	awstypes "github.com/aws/aws-sdk-go-v2/service/s3/types"
+
 	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/signature"
 
 	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/structs"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/containers/image/v5/directory"
 	"github.com/containers/image/v5/types"
 	"github.com/jellydator/ttlcache/v3"
@@ -38,7 +40,7 @@ import (
 
 var bucketInitCache = make(map[string]struct{})
 
-func getS3Session(url string) (*s3.S3, *string, error) {
+func getS3Session(url string) (*s3.Client, *string, error) {
 	fields := strings.Split(url, ":")
 	if len(fields) != 4 {
 		return nil, nil, fmt.Errorf("invalid S3 destination: %s, format is s3:<region>:<bucket>:<image>", url)
@@ -49,22 +51,19 @@ func getS3Session(url string) (*s3.S3, *string, error) {
 		return nil, nil, err
 	}
 
-	region := aws.String(fields[1])
+	region := fields[1]
 	bucket := aws.String(fields[2])
 
-	newSession, err := session.NewSession(&aws.Config{
-		Credentials:      credentials.NewStaticCredentials(accessKey, secretKey, ""),
-		Region:           region,
-		S3ForcePathStyle: aws.Bool(true),
-		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second, // Some blobs are huge
-		},
-	})
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		awsconfig.WithHTTPClient(&http.Client{Timeout: 300 * time.Second}),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return s3.New(newSession), bucket, nil
+	return s3.NewFromConfig(cfg), bucket, nil
 }
 
 func pushS3(ctx context.Context, image *structs.Image, dst string, repository string, tag string) error {
@@ -76,9 +75,9 @@ func pushS3(ctx context.Context, image *structs.Image, dst string, repository st
 	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, image, tag)
 }
 
-func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, dst string, repository string, image *structs.Image, tag string) error {
+func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string, dst string, repository string, image *structs.Image, tag string) error {
 	s3c := &s3Client{
-		uploader:  s3manager.NewUploaderWithClient(s3Session),
+		uploader:  manager.NewUploader(s3Session),
 		s3Session: s3Session,
 		dst:       dst,
 		bucket:    bucket,
@@ -131,7 +130,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.S3, bucket *string, ds
 		return err
 	}
 
-	srcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcAuth, _ := getSkopeoAuth(ctx, image.GetSourceRegistry(), image.GetSourceRepository())
 	srcCtx := &types.SystemContext{
 		DockerAuthConfig: srcAuth,
 	}
@@ -328,7 +327,7 @@ func syncObject(
 		}
 	}
 
-	exists, headMetadataDigest, err := s3ObjectExists(s3c.s3Session, s3c.bucket, key)
+	exists, headMetadataDigest, err := s3ObjectExists(ctx, s3c.s3Session, s3c.bucket, key)
 	if err != nil {
 		return err
 	}
@@ -400,15 +399,15 @@ func syncObject(
 		f:    tmpFile,
 	}
 
-	if _, err := s3c.uploader.Upload(&s3manager.UploadInput{
+	if _, err := s3c.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:      s3c.bucket,
 		Key:         aws.String(key),
 		Body:        dataCounter,
-		ACL:         s3c.acl,
+		ACL:         awstypes.ObjectCannedACL(*s3c.acl),
 		ContentType: contentType,
 		ContentMD5:  aws.String(contentMD5),
-		Metadata: map[string]*string{
-			"X-Calculated-Digest": aws.String(calculatedDigest),
+		Metadata: map[string]string{
+			"X-Calculated-Digest": calculatedDigest,
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to upload object: %w", err)
@@ -421,25 +420,24 @@ func syncObject(
 	return nil
 }
 
-func s3ObjectExists(s3Session *s3.S3, bucket *string, key string) (bool, string, error) {
-	head, err := s3Session.HeadObject(&s3.HeadObjectInput{
+func s3ObjectExists(ctx context.Context, s3Session *s3.Client, bucket *string, key string) (bool, string, error) {
+	head, err := s3Session.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: bucket,
 		Key:    &key,
 	})
 	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() != "NotFound" {
+		var nf *awstypes.NotFound
+		if !errors.As(err, &nf) {
 			return false, "", err
 		}
+
 		return false, "", nil
 	}
 
 	// R2 only supports MD5, so we need to check the custom X-Calculated-Digest metadata for the SHA256 hash
 	var headMetadataDigest string
 	if head != nil && head.Metadata != nil {
-		headMetadataDigestPtr, digestPresent := head.Metadata["X-Calculated-Digest"]
-		if digestPresent {
-			headMetadataDigest = *headMetadataDigestPtr
-		}
+		headMetadataDigest = head.Metadata["X-Calculated-Digest"]
 	}
 
 	return true, headMetadataDigest, nil

@@ -1,40 +1,41 @@
 package sync
 
 import (
+	"context"
 	"encoding/base64"
 	"strings"
 
 	"github.com/Altinity/docker-sync/config"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/aws/aws-sdk-go/service/ecrpublic"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/rs/zerolog/log"
 )
 
-func newEcrClient() (*ecr.ECR, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(config.ECRRegion.String()),
-	})
+func newEcrClient() (*ecr.Client, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(config.ECRRegion.String()),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return ecr.New(sess), nil
+	return ecr.NewFromConfig(cfg), nil
 }
 
-func newEcrPublicClient() (*ecrpublic.ECRPublic, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-	})
+func newEcrPublicClient() (*ecrpublic.Client, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(config.ECRRegion.String()),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return ecrpublic.New(sess), nil
+	return ecrpublic.NewFromConfig(cfg), nil
 }
 
-func authEcrPrivate(repository string) (string, string) {
+func authEcrPrivate(ctx context.Context, repository string) (string, string) {
 	client, err := newEcrClient()
 	if err != nil {
 		log.Error().
@@ -44,7 +45,7 @@ func authEcrPrivate(repository string) (string, string) {
 		return "", ""
 	}
 
-	out, err := client.GetAuthorizationToken(nil)
+	out, err := client.GetAuthorizationToken(ctx, nil)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -77,7 +78,7 @@ func authEcrPrivate(repository string) (string, string) {
 		return "", ""
 	}
 
-	if _, err := client.CreateRepository(&ecr.CreateRepositoryInput{
+	if _, err := client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
 		RepositoryName: aws.String(repository),
 	}); err != nil && !strings.Contains(err.Error(), "RepositoryAlreadyExistsException") {
 		log.Error().
@@ -89,7 +90,7 @@ func authEcrPrivate(repository string) (string, string) {
 }
 
 // FIXME: duplicated code.
-func authEcrPublic(repository string) (string, string) {
+func authEcrPublic(ctx context.Context, repository string) (string, string) {
 	client, err := newEcrPublicClient()
 	if err != nil {
 		log.Error().
@@ -99,7 +100,7 @@ func authEcrPublic(repository string) (string, string) {
 		return "", ""
 	}
 
-	out, err := client.GetAuthorizationToken(nil)
+	out, err := client.GetAuthorizationToken(ctx, nil)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -125,7 +126,7 @@ func authEcrPublic(repository string) (string, string) {
 		return "", ""
 	}
 
-	if _, err := client.CreateRepository(&ecrpublic.CreateRepositoryInput{
+	if _, err := client.CreateRepository(ctx, &ecrpublic.CreateRepositoryInput{
 		RepositoryName: aws.String(repository),
 	}); err != nil && !strings.Contains(err.Error(), "RepositoryAlreadyExistsException") {
 		log.Error().

@@ -73,9 +73,7 @@ telemetry:
 	})
 
 	t.Run("File", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp(os.TempDir(), "docker-sync")
-		assert.NoError(t, err)
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		rootCmd.SetArgs([]string{"writeConfig", "-o", filepath.Join(tmpDir, "config.yaml")})
 		assert.NoError(t, rootCmd.Execute())

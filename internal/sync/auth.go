@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Altinity/docker-sync/config"
@@ -25,7 +26,7 @@ func getObjectStorageAuth(url string) (string, string, error) {
 	return "", "", fmt.Errorf("no auth found for %s", url)
 }
 
-func getSkopeoAuth(url string, name string) (*types.DockerAuthConfig, string) {
+func getSkopeoAuth(ctx context.Context, url string, name string) (*types.DockerAuthConfig, string) {
 	repositories := config.SyncRegistries.Repositories()
 
 	var repo *structs.Repository
@@ -48,10 +49,10 @@ func getSkopeoAuth(url string, name string) (*types.DockerAuthConfig, string) {
 	switch repo.Auth.Helper {
 	case "":
 	case "ecr":
-		username, password := authEcrPrivate(name)
+		username, password := authEcrPrivate(ctx, name)
 		return &types.DockerAuthConfig{Username: username, Password: password}, "ecr"
 	case "ecr-public":
-		username, password := authEcrPublic(name)
+		username, password := authEcrPublic(ctx, name)
 		return &types.DockerAuthConfig{Username: username, Password: password}, "ecr-public"
 	default:
 		log.Error().

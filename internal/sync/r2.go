@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/Altinity/docker-sync/structs"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-func getR2Session(url string) (*s3.S3, *string, error) {
+func getR2Session(url string) (*s3.Client, *string, error) {
 	fields := strings.Split(url, ":")
 	if len(fields) != 4 {
 		return nil, nil, fmt.Errorf("invalid R2 destination: %s, format is r2:<endpoint>:<bucket>:<image>", url)
@@ -32,19 +32,17 @@ func getR2Session(url string) (*s3.S3, *string, error) {
 	endpoint := aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", fields[1]))
 	bucket := aws.String(fields[2])
 
-	newSession, err := session.NewSession(&aws.Config{
-		Credentials:      credentials.NewStaticCredentials(accessKey, secretKey, ""),
-		Endpoint:         endpoint,
-		Region:           aws.String("us-east-1"),
-		S3ForcePathStyle: aws.Bool(true),
-		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second, // Some blobs are huge
-		},
-	})
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion("us-east-1"),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		awsconfig.WithHTTPClient(&http.Client{Timeout: 300 * time.Second}),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s3.New(newSession), bucket, nil
+	return s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = endpoint
+	}), bucket, nil
 }
 
 func pushR2(ctx context.Context, image *structs.Image, dst string, repository string, tag string) error {

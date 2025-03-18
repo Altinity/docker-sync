@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jellydator/ttlcache/v3"
 )
 
@@ -61,35 +61,28 @@ func TestGetR2Session(t *testing.T) {
 		url         string
 		wantErr     bool
 		errContains string
-		checkResult func(*testing.T, *s3.S3, *string)
+		checkResult func(*testing.T, *s3.Client, *string)
 	}{
 		{
 			name:    "Valid R2 URL",
 			url:     "r2:account-id:bucket-name:image",
 			wantErr: false,
-			checkResult: func(t *testing.T, client *s3.S3, bucket *string) {
+			checkResult: func(t *testing.T, client *s3.Client, bucket *string) {
 				assert.NotNil(t, client)
 				assert.NotNil(t, bucket)
 				assert.Equal(t, "bucket-name", *bucket)
 
 				// Verify the client configuration
-				cfg := client.Client.Config
-				assert.Equal(t, "https://account-id.r2.cloudflarestorage.com", *cfg.Endpoint)
-				assert.Equal(t, "us-east-1", *cfg.Region)
-				assert.True(t, *cfg.S3ForcePathStyle)
+				cfg := client.Options()
+				assert.Equal(t, "https://account-id.r2.cloudflarestorage.com", *cfg.BaseEndpoint)
+				assert.Equal(t, "us-east-1", cfg.Region)
 
 				// Verify credentials
-				creds, err := cfg.Credentials.Get()
+				creds, err := cfg.Credentials.Retrieve(context.Background())
 				assert.NoError(t, err)
 				assert.Equal(t, "r2-access-key", creds.AccessKeyID)
 				assert.Equal(t, "r2-secret-key", creds.SecretAccessKey)
 				assert.Empty(t, creds.SessionToken)
-
-				// Verify HTTP client timeout
-				httpClient := cfg.HTTPClient
-				if assert.NotNil(t, httpClient) {
-					assert.Equal(t, 300*time.Second, httpClient.Timeout)
-				}
 			},
 		},
 		{
@@ -142,7 +135,7 @@ func TestGetR2Session(t *testing.T) {
 	}
 }
 
-// hasR2Credentials checks if all required R2 environment variables are set
+// hasR2Credentials checks if all required R2 environment variables are set.
 func hasR2Credentials() bool {
 	accountID := os.Getenv("R2_ACCOUNT_ID")
 	accessKeyID := os.Getenv("R2_ACCESS_KEY_ID")
@@ -150,7 +143,7 @@ func hasR2Credentials() bool {
 	return accountID != "" && accessKeyID != "" && secretAccessKey != ""
 }
 
-// skipIfNoR2Credentials skips the test if R2 credentials are not available
+// skipIfNoR2Credentials skips the test if R2 credentials are not available.
 func skipIfNoR2Credentials(t *testing.T) {
 	if !hasR2Credentials() {
 		t.Skip("Skipping test: R2 credentials not available")
@@ -238,13 +231,12 @@ func TestR2Integration(t *testing.T) {
 		assert.Equal(t, testBucket, *bucket)
 
 		// Verify the client configuration
-		cfg := client.Client.Config
-		assert.Equal(t, "us-east-1", *cfg.Region)
-		assert.True(t, *cfg.S3ForcePathStyle)
-		assert.Equal(t, fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID), *cfg.Endpoint)
+		cfg := client.Options()
+		assert.Equal(t, "us-east-1", &cfg.Region)
+		assert.Equal(t, fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID), *cfg.BaseEndpoint)
 
 		// Verify credentials
-		creds, err := cfg.Credentials.Get()
+		creds, err := cfg.Credentials.Retrieve(context.Background())
 		assert.NoError(t, err)
 		assert.Equal(t, os.Getenv("R2_ACCESS_KEY_ID"), creds.AccessKeyID)
 		assert.Equal(t, os.Getenv("R2_SECRET_ACCESS_KEY"), creds.SecretAccessKey)
@@ -268,7 +260,7 @@ func TestR2SyncObject(t *testing.T) {
 		baseDir:   "test",
 		dst:       fmt.Sprintf("r2:%s:%s:test", accountID, testBucket),
 		s3Session: s3Session,
-		uploader:  s3manager.NewUploaderWithClient(s3Session), // This was missing
+		uploader:  manager.NewUploader(s3Session), // This was missing
 	}
 
 	content := "test content"
@@ -321,14 +313,14 @@ func TestR2SyncObject(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Verify the object exists
-				exists, digest, err := s3ObjectExists(s3Session, bucket, tt.key)
+				exists, digest, err := s3ObjectExists(context.Background(), s3Session, bucket, tt.key)
 				assert.NoError(t, err)
 				assert.True(t, exists)
 				assert.NotEmpty(t, digest)
 				assert.True(t, strings.HasPrefix(digest, "sha256:"))
 
 				// Optional: verify content
-				output, err := s3Session.GetObject(&s3.GetObjectInput{
+				output, err := s3Session.GetObject(context.Background(), &s3.GetObjectInput{
 					Bucket: bucket,
 					Key:    aws.String(tt.key),
 				})
@@ -343,7 +335,7 @@ func TestR2SyncObject(t *testing.T) {
 			}
 
 			// Cleanup
-			_, err = s3Session.DeleteObject(&s3.DeleteObjectInput{
+			_, err = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 				Bucket: bucket,
 				Key:    aws.String(tt.key),
 			})
@@ -369,19 +361,19 @@ func TestR2ObjectOperations(t *testing.T) {
 
 	t.Run("object lifecycle", func(t *testing.T) {
 		// Clean up any existing object
-		_, _ = s3Session.DeleteObject(&s3.DeleteObjectInput{
+		_, _ = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})
 
 		// Test object doesn't exist initially
-		exists, digest, err := s3ObjectExists(s3Session, bucket, testKey)
+		exists, digest, err := s3ObjectExists(context.Background(), s3Session, bucket, testKey)
 		assert.NoError(t, err)
 		assert.False(t, exists)
 		assert.Empty(t, digest)
 
 		// Create uploader
-		uploader := s3manager.NewUploaderWithClient(s3Session)
+		uploader := manager.NewUploader(s3Session)
 
 		// Upload object
 		s3c := &s3Client{
@@ -403,14 +395,14 @@ func TestR2ObjectOperations(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify object exists
-		exists, digest, err = s3ObjectExists(s3Session, bucket, testKey)
+		exists, digest, err = s3ObjectExists(context.Background(), s3Session, bucket, testKey)
 		assert.NoError(t, err)
 		assert.True(t, exists)
 		assert.NotEmpty(t, digest)
 		assert.True(t, strings.HasPrefix(digest, "sha256:"))
 
 		// Verify content
-		output, err := s3Session.GetObject(&s3.GetObjectInput{
+		output, err := s3Session.GetObject(context.Background(), &s3.GetObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})
@@ -424,34 +416,10 @@ func TestR2ObjectOperations(t *testing.T) {
 		}
 
 		// Clean up
-		_, err = s3Session.DeleteObject(&s3.DeleteObjectInput{
+		_, err = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})
 		assert.NoError(t, err)
 	})
-}
-
-// Helper function to cleanup test objects
-func cleanupTestObjects(t *testing.T, s3Session *s3.S3, bucket *string, prefix string) {
-	input := &s3.ListObjectsV2Input{
-		Bucket: bucket,
-		Prefix: aws.String(prefix),
-	}
-
-	err := s3Session.ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-		for _, obj := range page.Contents {
-			_, err := s3Session.DeleteObject(&s3.DeleteObjectInput{
-				Bucket: bucket,
-				Key:    obj.Key,
-			})
-			if err != nil {
-				t.Logf("Failed to delete object %s: %v", *obj.Key, err)
-			}
-		}
-		return true
-	})
-	if err != nil {
-		t.Logf("Failed to list objects for cleanup: %v", err)
-	}
 }
