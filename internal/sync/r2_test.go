@@ -232,7 +232,7 @@ func TestR2Integration(t *testing.T) {
 
 		// Verify the client configuration
 		cfg := client.Options()
-		assert.Equal(t, "us-east-1", &cfg.Region)
+		assert.Equal(t, "us-east-1", cfg.Region)
 		assert.Equal(t, fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID), *cfg.BaseEndpoint)
 
 		// Verify credentials

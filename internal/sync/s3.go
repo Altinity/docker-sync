@@ -407,7 +407,7 @@ func syncObject(
 		ContentType: contentType,
 		ContentMD5:  aws.String(contentMD5),
 		Metadata: map[string]string{
-			"X-Calculated-Digest": calculatedDigest,
+			"x-calculated-digest": calculatedDigest,
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to upload object: %w", err)
@@ -437,7 +437,7 @@ func s3ObjectExists(ctx context.Context, s3Session *s3.Client, bucket *string, k
 	// R2 only supports MD5, so we need to check the custom X-Calculated-Digest metadata for the SHA256 hash
 	var headMetadataDigest string
 	if head != nil && head.Metadata != nil {
-		headMetadataDigest = head.Metadata["X-Calculated-Digest"]
+		headMetadataDigest, _ = head.Metadata["x-calculated-digest"]
 	}
 
 	return true, headMetadataDigest, nil
