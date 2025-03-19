@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -156,13 +155,11 @@ func TestWithValidExistingPathOrEmpty(t *testing.T) {
 	})
 
 	t.Run("Existing Path", func(t *testing.T) {
-		tempDir, err := os.MkdirTemp("", "test")
-		assert.NoError(t, err)
-		defer os.RemoveAll(tempDir)
+		tempDir := t.TempDir()
 
 		k := &Key{}
 		WithValidExistingPathOrEmpty()(k)
-		err = k.ValidationFuncs[0](tempDir)
+		err := k.ValidationFuncs[0](tempDir)
 		assert.NoError(t, err)
 	})
 

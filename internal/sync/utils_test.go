@@ -27,14 +27,10 @@ func TestGetRepositoryType(t *testing.T) {
 
 func TestShamove(t *testing.T) {
 	// Setup temporary base directory for testing
-	baseDir, err := os.MkdirTemp("", "shamove_test")
-	if err != nil {
-		t.Fatalf("unable to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(baseDir)
+	baseDir := t.TempDir()
 
 	// Create a temporary file for testing
-	oldFile, err := os.CreateTemp("", "shamove_old")
+	oldFile, err := os.CreateTemp(t.TempDir(), "shamove_old")
 	if err != nil {
 		t.Fatalf("unable to create temp file: %v", err)
 	}

@@ -1,16 +1,17 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-func listS3Tags(dst string, fields []string) ([]string, error) {
-	var s3Session *s3.S3
+func listS3Tags(ctx context.Context, dst string, fields []string) ([]string, error) {
+	var s3Session *s3.Client
 	var bucket *string
 	var err error
 
@@ -27,20 +28,25 @@ func listS3Tags(dst string, fields []string) ([]string, error) {
 		return nil, fmt.Errorf("failed to get bucket session: %w", err)
 	}
 
-	s3Lister, err := s3Session.ListObjectsV2(&s3.ListObjectsV2Input{
+	p := s3.NewListObjectsV2Paginator(s3Session, &s3.ListObjectsV2Input{
 		Bucket: bucket,
 		Prefix: aws.String(filepath.Join("v2", fields[3], "manifests")),
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	var tags []string
 
-	for _, obj := range s3Lister.Contents {
-		fname := filepath.Base(*obj.Key)
-		if !strings.HasPrefix(fname, "sha256:") {
-			tags = append(tags, fmt.Sprintf("%s:%s", dst, fname))
+	var i int
+	for p.HasMorePages() {
+		i++
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return tags, fmt.Errorf("failed to get page %d, %w", i, err)
+		}
+		for _, obj := range page.Contents {
+			fname := filepath.Base(*obj.Key)
+			if !strings.HasPrefix(fname, "sha256:") {
+				tags = append(tags, fmt.Sprintf("%s:%s", dst, fname))
+			}
 		}
 	}
 

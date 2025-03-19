@@ -57,8 +57,8 @@ func push(ctx context.Context, image *structs.Image, dst string, tag string) err
 
 			return nil
 		case OCIRepository:
-			srcAuth, _ := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
-			dstAuth, _ := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst))
+			srcAuth, _ := getSkopeoAuth(ctx, image.GetSourceRegistry(), image.GetSourceRepository())
+			dstAuth, _ := getSkopeoAuth(ctx, image.GetRegistry(dst), image.GetRepository(dst))
 
 			dstRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", dst, tag))
 			if err != nil {
@@ -127,7 +127,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	}
 	image.SrcRef = srcRef
 
-	srcAuth, srcAuthName := getSkopeoAuth(image.GetSourceRegistry(), image.GetSourceRepository())
+	srcAuth, srcAuthName := getSkopeoAuth(ctx, image.GetSourceRegistry(), image.GetSourceRepository())
 	srcCtx := &types.SystemContext{
 		DockerAuthConfig: srcAuth,
 	}
@@ -166,7 +166,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		case S3CompatibleRepository:
 			fields := strings.Split(dst, ":")
 
-			tags, err := listS3Tags(dst, fields)
+			tags, err := listS3Tags(ctx, dst, fields)
 			if err != nil {
 				return err
 			}
@@ -188,7 +188,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 				return err
 			}
 
-			dstAuth, dstAuthName := getSkopeoAuth(image.GetRegistry(dst), image.GetRepository(dst))
+			dstAuth, dstAuthName := getSkopeoAuth(ctx, image.GetRegistry(dst), image.GetRepository(dst))
 
 			dstCtx := &types.SystemContext{
 				DockerAuthConfig: dstAuth,

@@ -1,8 +1,8 @@
 package sync
 
 import (
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type manifestWithMediaType struct {
@@ -10,8 +10,8 @@ type manifestWithMediaType struct {
 }
 
 type s3Client struct {
-	uploader  *s3manager.Uploader
-	s3Session *s3.S3
+	uploader  *manager.Uploader
+	s3Session *s3.Client
 	dst       string
 	bucket    *string
 	acl       *string
