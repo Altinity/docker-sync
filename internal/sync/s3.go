@@ -435,12 +435,11 @@ func s3ObjectExists(ctx context.Context, s3Session *s3.Client, bucket *string, k
 	}
 
 	// R2 only supports MD5, so we need to check the custom X-Calculated-Digest metadata for the SHA256 hash
-	var headMetadataDigest string
 	if head != nil && head.Metadata != nil {
 		if digest, ok := head.Metadata["x-calculated-digest"]; ok {
-			headMetadataDigest = digest
+			return true, digest, nil
 		}
 	}
 
-	return true, headMetadataDigest, nil
+	return true, "", nil
 }
