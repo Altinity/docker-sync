@@ -13,8 +13,6 @@ import (
 func getObjectStorageAuth(url string) (string, string, error) {
 	repositories := config.SyncRegistries.Repositories()
 
-	fmt.Println(config.SyncRegistries)
-
 	for _, r := range repositories {
 		if r.URL == url {
 			if r.Auth.Username != "" && r.Auth.Password != "" {
