@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.32.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.3
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/containers/image/v5 v5.34.1
+	github.com/containers/image/v5 v5.34.2
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/rs/zerolog v1.33.0
@@ -53,7 +53,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containers/libtrust v0.0.0-20230121012942-c1716e8a8d01 // indirect
 	github.com/containers/ocicrypt v1.2.1 // indirect
-	github.com/containers/storage v1.57.1 // indirect
+	github.com/containers/storage v1.57.2 // indirect
 	github.com/cyberphone/json-canonicalization v0.0.0-20231217050601-ba74d44ecf5f // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
