@@ -93,6 +93,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 			"v2",
 			aws.String("application/json"),
 			strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
+      false,
 		); err != nil {
 			return err
 		}
@@ -258,6 +259,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 				key,
 				aws.String(mediaType),
 				f,
+        false,
 			); err != nil {
 				return err
 			}
@@ -294,6 +296,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 				key,
 				aws.String(mwmt.MediaType),
 				bytes.NewReader(b),
+        strings.HasSuffix(key, fmt.Sprintf(":%s", tag)),
 			); err != nil {
 				return err
 			}
@@ -314,10 +317,11 @@ func syncObject(
 	key string,
 	contentType *string,
 	r io.Reader,
+  force bool,
 ) error {
 	cacheKey := fmt.Sprintf("%s/%s", *s3c.bucket, key)
 
-	if config.SyncS3ObjectCacheEnabled.Bool() {
+	if config.SyncS3ObjectCacheEnabled.Bool() && !force {
 		if seem := objectCache.Has(cacheKey); seem {
 			log.Debug().
 				Str("bucket", *s3c.bucket).
@@ -335,7 +339,7 @@ func syncObject(
 	fname := path.Base(key)
 
 	// Try to avoid downloading the object if it already exists
-	if exists && strings.HasPrefix(fname, "sha256:") && fname == headMetadataDigest {
+	if !force && exists && strings.HasPrefix(fname, "sha256:") && fname == headMetadataDigest {
 		log.Debug().
 			Str("bucket", *s3c.bucket).
 			Str("key", key).
