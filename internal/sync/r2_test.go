@@ -305,6 +305,7 @@ func TestR2SyncObject(t *testing.T) {
 				tt.key,
 				aws.String(tt.contentType),
 				reader,
+				false,
 			)
 
 			if tt.wantErr {
@@ -391,6 +392,7 @@ func TestR2ObjectOperations(t *testing.T) {
 			testKey,
 			aws.String("text/plain"),
 			strings.NewReader(testContent),
+			false,
 		)
 		assert.NoError(t, err)
 
