@@ -1,6 +1,7 @@
 module github.com/Altinity/docker-sync
 
 go 1.23.6
+
 toolchain go1.24.1
 
 require (
@@ -27,7 +28,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.35.0
 	go.opentelemetry.io/otel/sdk/metric v1.35.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/sync v0.12.0
+	golang.org/x/sync v0.13.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
