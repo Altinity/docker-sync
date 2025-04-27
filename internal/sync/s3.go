@@ -93,7 +93,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 			"v2",
 			aws.String("application/json"),
 			strings.NewReader("{}"), // We just need to return a 200 and a valid JSON response
-      false,
+			false,
 		); err != nil {
 			return err
 		}
@@ -114,10 +114,10 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 
 	baseDir = filepath.Join(baseDir, "v2", repository)
 
-	if err := os.MkdirAll(filepath.Join(baseDir, "blobs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(baseDir, "blobs"), 0o755); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(baseDir, "manifests"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(baseDir, "manifests"), 0o755); err != nil {
 		return err
 	}
 
@@ -259,7 +259,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 				key,
 				aws.String(mediaType),
 				f,
-        false,
+				false,
 			); err != nil {
 				return err
 			}
@@ -296,7 +296,7 @@ func pushS3WithSession(ctx context.Context, s3Session *s3.Client, bucket *string
 				key,
 				aws.String(mwmt.MediaType),
 				bytes.NewReader(b),
-        strings.HasSuffix(key, fmt.Sprintf(":%s", tag)),
+				strings.HasSuffix(key, fmt.Sprintf("/%s", tag)),
 			); err != nil {
 				return err
 			}
@@ -317,11 +317,11 @@ func syncObject(
 	key string,
 	contentType *string,
 	r io.Reader,
-  force bool,
+	force bool,
 ) error {
 	cacheKey := fmt.Sprintf("%s/%s", *s3c.bucket, key)
 
-	if config.SyncS3ObjectCacheEnabled.Bool() && !force {
+	if !force && config.SyncS3ObjectCacheEnabled.Bool() {
 		if seem := objectCache.Has(cacheKey); seem {
 			log.Debug().
 				Str("bucket", *s3c.bucket).
@@ -338,7 +338,7 @@ func syncObject(
 
 	fname := path.Base(key)
 
-	// Try to avoid downloading the object if it already exists
+	// Try to avoid uploading the object if it already exists
 	if !force && exists && strings.HasPrefix(fname, "sha256:") && fname == headMetadataDigest {
 		log.Debug().
 			Str("bucket", *s3c.bucket).
@@ -351,7 +351,7 @@ func syncObject(
 		return nil
 	}
 
-	// Blobs can be huge and we need a io.ReadSeeker, so we can't read them all into memory.
+	// Blobs can be huge and we need an io.ReadSeeker, so we can't read them all into memory.
 	tmpFile, err := os.CreateTemp("", "blob-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
@@ -372,7 +372,7 @@ func syncObject(
 	contentMD5 := base64.StdEncoding.EncodeToString(md5Hash.Sum(nil))
 
 	// Try to avoid uploading the object if the hash matches
-	if calculatedDigest == headMetadataDigest {
+	if !force && calculatedDigest == headMetadataDigest {
 		log.Debug().
 			Str("bucket", *s3c.bucket).
 			Str("key", key).

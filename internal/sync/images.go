@@ -251,7 +251,7 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			}
 
 			if len(actualDsts) == 0 {
-				log.Info().
+				log.Debug().
 					Str("image", image.Source).
 					Str("tag", tag).
 					Msg("Tag already exists in all targets, skipping")
