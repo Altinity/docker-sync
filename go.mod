@@ -16,7 +16,7 @@ require (
 	github.com/containers/image/v5 v5.34.3
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/prometheus/client_golang v1.20.5
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cast v1.7.1
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
