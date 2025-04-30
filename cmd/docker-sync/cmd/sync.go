@@ -5,12 +5,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	dockersync "github.com/Altinity/docker-sync"
 	"github.com/Altinity/docker-sync/config"
-	"github.com/Altinity/docker-sync/logging"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -20,6 +20,7 @@ import (
 type syncImage struct {
 	Source      string   `yaml:"source"`
 	Targets     []string `yaml:"targets"`
+	Tags        []string `yaml:"tags"`
 	MutableTags []string `yaml:"mutableTags"`
 	IgnoredTags []string `yaml:"ignoredTags"`
 }
@@ -63,8 +64,6 @@ var syncCmd = &cobra.Command{
 			os.Exit(0)
 		}()
 
-		logging.ReloadGlobalLogger()
-
 		log.Info().Msg("Starting Docker Sync")
 
 		cnf := syncConfig{}
@@ -72,12 +71,14 @@ var syncCmd = &cobra.Command{
 
 		source, _ := cmd.Flags().GetString("source")
 		target, _ := cmd.Flags().GetString("target")
+		tags, _ := cmd.Flags().GetStringSlice("tags")
 		mutableTags, _ := cmd.Flags().GetStringSlice("mutableTags")
 		ignoredTags, _ := cmd.Flags().GetStringSlice("ignoredTags")
 
 		cnf.Sync.Images = append(cnf.Sync.Images, syncImage{
 			Source:      source,
 			Targets:     []string{target},
+			Tags:        tags,
 			MutableTags: mutableTags,
 			IgnoredTags: ignoredTags,
 		})
@@ -97,7 +98,6 @@ var syncCmd = &cobra.Command{
 		imgHelper := structs.Image{}
 
 		sourceUrl := imgHelper.GetRegistry(source)
-		targetUrl := imgHelper.GetRegistry(target)
 
 		if sourceUrl != "" && (sourceUsername != "" || sourcePassword != "" || sourceToken != "" || sourceHelper != "") {
 			registries = append(registries, syncRegistry{
@@ -110,6 +110,14 @@ var syncCmd = &cobra.Command{
 				Name: "source",
 				URL:  sourceUrl,
 			})
+		}
+
+		var targetUrl string
+		if strings.HasPrefix(target, "r2:") || strings.HasPrefix(target, "s3:") {
+			fields := strings.Split(target, ":")
+			targetUrl = strings.Join(fields[:3], ":")
+		} else {
+			targetUrl = imgHelper.GetRegistry(target)
 		}
 
 		if targetUrl != "" && (targetUsername != "" || targetPassword != "" || targetToken != "" || targetHelper != "") {
@@ -138,7 +146,7 @@ var syncCmd = &cobra.Command{
 			log.Fatal().Err(err).Msg("Failed to marshal configuration")
 		}
 
-		if err := os.WriteFile(filepath.Join(tmpDir, "config.yaml"), b, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, "config.yaml"), b, 0o644); err != nil {
 			log.Fatal().Err(err).Msg("Failed to write configuration")
 		}
 
@@ -171,6 +179,7 @@ func init() {
 	syncCmd.MarkFlagRequired("source")
 	syncCmd.MarkFlagRequired("target")
 
+	syncCmd.Flags().StringSliceP("tags", "o", []string{}, "Sync only these tags")
 	syncCmd.Flags().StringSliceP("mutable-tags", "m", []string{}, "Mutable tags")
 	syncCmd.Flags().StringSliceP("ignored-tags", "i", []string{}, "Ignored tags")
 
