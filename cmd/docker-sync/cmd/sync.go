@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -140,8 +139,7 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal().Err(err).Msg("Failed to create temporary directory")
 		}
-		fmt.Println(tmpDir)
-		// defer os.RemoveAll(tmpDir)
+		defer os.RemoveAll(tmpDir)
 
 		b, err := yaml.Marshal(cnf)
 		if err != nil {
