@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -72,8 +73,8 @@ var syncCmd = &cobra.Command{
 		source, _ := cmd.Flags().GetString("source")
 		target, _ := cmd.Flags().GetString("target")
 		tags, _ := cmd.Flags().GetStringSlice("tags")
-		mutableTags, _ := cmd.Flags().GetStringSlice("mutableTags")
-		ignoredTags, _ := cmd.Flags().GetStringSlice("ignoredTags")
+		mutableTags, _ := cmd.Flags().GetStringSlice("mutable-tags")
+		ignoredTags, _ := cmd.Flags().GetStringSlice("ignored-tags")
 
 		cnf.Sync.Images = append(cnf.Sync.Images, syncImage{
 			Source:      source,
@@ -139,7 +140,8 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal().Err(err).Msg("Failed to create temporary directory")
 		}
-		defer os.RemoveAll(tmpDir)
+		fmt.Println(tmpDir)
+		// defer os.RemoveAll(tmpDir)
 
 		b, err := yaml.Marshal(cnf)
 		if err != nil {
