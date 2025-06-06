@@ -215,6 +215,18 @@ Create a **Modify Response Header** rule.
 **Then...**: Set static > `Docker-Distribution-API-Version` > `registry/2.0`
 ```
 
+##### Content-Type Fix
+
+Create a **Modify Response Header** rule.
+
+```
+**If incoming requests match...**: Custom filter expression
+
+**Expression**: `(starts_with(http.request.uri.path, "/v2/") and (http.request.uri.path contains "/manifests/" or http.request.uri.path contains "/blobs/"))`
+
+**Then...**: Remove> `Content-Type`
+```
+
 #### S3 (target only)
 
 ```yaml
