@@ -135,13 +135,32 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 	var srcTags []string
 
 	if len(image.Tags) > 0 {
-		srcTags = image.Tags
+		for _, tag := range image.Tags {
+			if tag == "@semver" {
+				allTags, err := docker.GetRepositoryTags(ctx, srcCtx, srcRef)
+				if err != nil {
+					return err
+				}
+
+				for _, t := range allTags {
+					if isSemVerTag(t) {
+						srcTags = append(srcTags, t)
+					}
+				}
+			} else {
+				srcTags = append(srcTags, tag)
+			}
+		}
 	} else {
 		srcTags, err = docker.GetRepositoryTags(ctx, srcCtx, srcRef)
 		if err != nil {
 			return err
 		}
 	}
+
+	// Remove duplicate tags
+	slices.Sort(srcTags)
+	srcTags = slices.Compact(srcTags)
 
 	if len(srcTags) == 0 {
 		log.Warn().

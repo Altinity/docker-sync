@@ -6,9 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Masterminds/semver"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+func isSemVerTag(tag string) bool {
+	_, err := semver.NewVersion(tag)
+	return err == nil
+}
 
 func listS3Tags(ctx context.Context, dst string, fields []string) ([]string, error) {
 	var s3Session *s3.Client
