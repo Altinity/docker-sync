@@ -46,7 +46,7 @@ var mergeYamlCmd = &cobra.Command{
 		if outFile == "" {
 			fmt.Println(string(config))
 		} else {
-			if err := os.WriteFile(outFile, config, 0644); err != nil {
+			if err := os.WriteFile(outFile, config, 0o644); err != nil {
 				cmd.Annotations["error"] = err.Error()
 				return
 			}
@@ -56,6 +56,7 @@ var mergeYamlCmd = &cobra.Command{
 		// Wait for a second to allow for any pending log messages to be flushed
 		time.Sleep(1 * time.Second)
 		if cmd.Annotations["error"] != "" {
+			fmt.Printf("Error: %s\n", cmd.Annotations["error"])
 			os.Exit(1)
 		}
 	},
