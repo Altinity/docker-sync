@@ -53,3 +53,12 @@ func pushR2(ctx context.Context, image *structs.Image, dst string, repository st
 
 	return pushS3WithSession(ctx, s3Session, bucket, dst, repository, image, tag)
 }
+
+func deleteR2(ctx context.Context, image *structs.Image, dst string, repository string, tag string) error {
+	s3Session, bucket, err := getR2Session(dst)
+	if err != nil {
+		return err
+	}
+
+	return deleteS3WithSession(ctx, s3Session, bucket, dst, repository, tag)
+}

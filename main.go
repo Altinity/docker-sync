@@ -9,6 +9,8 @@ import (
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/multierr"
 )
 
@@ -39,6 +41,8 @@ func Run(ctx context.Context) error {
 func RunOnce(ctx context.Context, images []*structs.Image) error {
 	var merr error
 
+	telemetry.MonitoredImages.Record(ctx, int64(len(images)))
+
 	for k := range images {
 		select {
 		case <-ctx.Done():
@@ -46,11 +50,34 @@ func RunOnce(ctx context.Context, images []*structs.Image) error {
 		default:
 			image := images[k]
 
+			// Initialize telemetry for the image
+			telemetry.ImageSyncErrors.Add(ctx, 0,
+				metric.WithAttributes(
+					attribute.KeyValue{
+						Key:   "image",
+						Value: attribute.StringValue(image.Source),
+					},
+				),
+			)
+
 			if err := sync.SyncImage(ctx, image); err != nil {
 				log.Error().
 					Err(err).
 					Str("source", image.Source).
 					Msg("Failed to sync image")
+
+				telemetry.ImageSyncErrors.Add(ctx, 1,
+					metric.WithAttributes(
+						attribute.KeyValue{
+							Key:   "image",
+							Value: attribute.StringValue(image.Source),
+						},
+						attribute.KeyValue{
+							Key:   "error",
+							Value: attribute.StringValue(err.Error()),
+						},
+					),
+				)
 
 				merr = multierr.Append(merr, err)
 

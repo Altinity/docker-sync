@@ -8,6 +8,11 @@ var (
 		WithDefaultValue(10),
 		WithValidInt())
 
+	// SyncS3MaxPurgeConcurrency is the maximum number of concurrent purges to S3.
+	SyncS3MaxPurgeConcurrency = NewKey("sync.s3.maxPurgeConcurrency",
+		WithDefaultValue(100),
+		WithValidInt())
+
 	// SyncS3ObjectCacheEnabled enables S3 object-seem cache.
 	SyncS3ObjectCacheEnabled = NewKey("sync.s3.objectCache.enabled",
 		WithDefaultValue(true),

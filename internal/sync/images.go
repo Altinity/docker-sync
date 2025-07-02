@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/Altinity/docker-sync/config"
 	"github.com/Altinity/docker-sync/internal/telemetry"
 	"github.com/Altinity/docker-sync/structs"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/docker"
-	"github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
@@ -34,87 +30,6 @@ func checkRateLimit(err error) error {
 	return backoff.Permanent(err)
 }
 
-func push(ctx context.Context, image *structs.Image, dst string, tag string) error {
-	return backoff.RetryNotify(func() error {
-		switch getRepositoryType(dst) {
-		case S3CompatibleRepository:
-			fields := strings.Split(dst, ":")
-
-			var fn func(context.Context, *structs.Image, string, string, string) error
-
-			switch fields[0] {
-			case "r2":
-				fn = pushR2
-			case "s3":
-				fn = pushS3
-			default:
-				return fmt.Errorf("unsupported bucket destination: %s", dst)
-			}
-
-			if err := fn(ctx, image, dst, fields[3], tag); err != nil {
-				return err
-			}
-
-			return nil
-		case OCIRepository:
-			srcAuth, _ := getSkopeoAuth(ctx, image.GetSourceRegistry(), image.GetSourceRepository())
-			dstAuth, _ := getSkopeoAuth(ctx, image.GetRegistry(dst), image.GetRepository(dst))
-
-			dstRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", dst, tag))
-			if err != nil {
-				return err
-			}
-
-			srcRef, err := docker.ParseReference(fmt.Sprintf("//%s:%s", image.Source, tag))
-			if err != nil {
-				return err
-			}
-
-			srcCtx := &types.SystemContext{
-				DockerAuthConfig: srcAuth,
-			}
-			dstCtx := &types.SystemContext{
-				DockerAuthConfig: dstAuth,
-			}
-
-			policy := &signature.Policy{Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()}}
-			policyContext, err := signature.NewPolicyContext(policy)
-			if err != nil {
-				return err
-			}
-
-			ch := make(chan types.ProgressProperties)
-			defer close(ch)
-
-			chCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			go dockerDataCounter(chCtx, image.Source, dst, ch)
-
-			_, err = copy.Image(ctx, policyContext, dstRef, srcRef, &copy.Options{
-				SourceCtx:          srcCtx,
-				DestinationCtx:     dstCtx,
-				ImageListSelection: copy.CopyAllImages,
-				ProgressInterval:   time.Second,
-				Progress:           ch,
-			})
-
-			return checkRateLimit(err)
-		default:
-			return fmt.Errorf("unsupported repository type")
-		}
-	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(
-		backoff.WithInitialInterval(1*time.Minute),
-	), config.SyncMaxErrors.UInt64()), func(err error, dur time.Duration) {
-		log.Error().
-			Err(err).
-			Dur("backoff", dur).
-			Str("image", image.Source).
-			Str("tag", tag).
-			Str("target", dst).
-			Msg("Push failed")
-	})
-}
-
 func SyncImage(ctx context.Context, image *structs.Image) error {
 	log.Info().
 		Str("image", image.Source).
@@ -132,35 +47,10 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		DockerAuthConfig: srcAuth,
 	}
 
-	var srcTags []string
-
-	if len(image.Tags) > 0 {
-		for _, tag := range image.Tags {
-			if tag == "@semver" {
-				allTags, err := docker.GetRepositoryTags(ctx, srcCtx, srcRef)
-				if err != nil {
-					return err
-				}
-
-				for _, t := range allTags {
-					if isSemVerTag(t) {
-						srcTags = append(srcTags, t)
-					}
-				}
-			} else {
-				srcTags = append(srcTags, tag)
-			}
-		}
-	} else {
-		srcTags, err = docker.GetRepositoryTags(ctx, srcCtx, srcRef)
-		if err != nil {
-			return err
-		}
+	srcTags, err := getSourceTags(ctx, image, srcCtx, srcRef)
+	if err != nil {
+		return err
 	}
-
-	// Remove duplicate tags
-	slices.Sort(srcTags)
-	srcTags = slices.Compact(srcTags)
 
 	if len(srcTags) == 0 {
 		log.Warn().
@@ -171,6 +61,15 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		return nil
 	}
 
+	telemetry.MonitoredTags.Record(ctx, int64(len(srcTags)),
+		metric.WithAttributes(
+			attribute.KeyValue{
+				Key:   "image",
+				Value: attribute.StringValue(image.Source),
+			},
+		),
+	)
+
 	log.Info().
 		Str("image", image.Source).
 		Str("auth", srcAuthName).
@@ -178,59 +77,9 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 		Msg("Found source tags")
 
 	// Get all tags from targets
-	var dstTags []string
-
-	for _, dst := range image.Targets {
-		switch getRepositoryType(dst) {
-		case S3CompatibleRepository:
-			fields := strings.Split(dst, ":")
-
-			tags, err := listS3Tags(ctx, dst, fields)
-			if err != nil {
-				return err
-			}
-
-			if len(tags) > 0 {
-				log.Info().
-					Str("image", image.Source).
-					Str("target", dst).
-					Int("tags", len(tags)).
-					Msg("Found destination tags")
-
-				dstTags = append(dstTags, tags...)
-			}
-
-			continue
-		case OCIRepository:
-			dstRef, err := docker.ParseReference(fmt.Sprintf("//%s", dst))
-			if err != nil {
-				return err
-			}
-
-			dstAuth, dstAuthName := getSkopeoAuth(ctx, image.GetRegistry(dst), image.GetRepository(dst))
-
-			dstCtx := &types.SystemContext{
-				DockerAuthConfig: dstAuth,
-			}
-
-			tags, err := docker.GetRepositoryTags(ctx, dstCtx, dstRef)
-			if err != nil {
-				return err
-			}
-
-			if len(tags) > 0 {
-				log.Info().
-					Str("image", image.Source).
-					Str("target", dst).
-					Int("tags", len(tags)).
-					Str("auth", dstAuthName).
-					Msg("Found destination tags")
-
-				for _, tag := range tags {
-					dstTags = append(dstTags, fmt.Sprintf("%s:%s", dst, tag))
-				}
-			}
-		}
+	dstTags, err := getDstTags(ctx, image)
+	if err != nil {
+		return err
 	}
 
 	// Sync tags
@@ -243,92 +92,11 @@ func SyncImage(ctx context.Context, image *structs.Image) error {
 			continue
 		}
 
-		telemetry.Errors.Add(ctx, 0,
-			metric.WithAttributes(
-				attribute.KeyValue{
-					Key:   "image",
-					Value: attribute.StringValue(image.Source),
-				},
-				attribute.KeyValue{
-					Key:   "tag",
-					Value: attribute.StringValue(tag),
-				},
-			),
-		)
-
-		if err := func() error {
-			tag := tag
-
-			var actualDsts []string
-
-			for _, dst := range image.Targets {
-				if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
-					continue
-				}
-
-				actualDsts = append(actualDsts, dst)
-			}
-
-			if len(actualDsts) == 0 {
-				log.Debug().
-					Str("image", image.Source).
-					Str("tag", tag).
-					Msg("Tag already exists in all targets, skipping")
-
-				return nil
-			}
-
-			log.Info().
-				Str("image", image.Source).
-				Str("tag", tag).
-				Strs("targets", image.Targets).
-				Msg("Syncing tag")
-
-			for _, dst := range actualDsts {
-				if err := push(ctx, image, dst, tag); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		}(); err != nil {
-			log.Error().
-				Err(err).
-				Str("image", image.Source).
-				Str("tag", tag).
-				Msg("Failed to sync tag")
-
-			telemetry.Errors.Add(ctx, 1,
-				metric.WithAttributes(
-					attribute.KeyValue{
-						Key:   "image",
-						Value: attribute.StringValue(image.Source),
-					},
-					attribute.KeyValue{
-						Key:   "tag",
-						Value: attribute.StringValue(tag),
-					},
-					attribute.KeyValue{
-						Key:   "error",
-						Value: attribute.StringValue(err.Error()),
-					},
-				),
-			)
-		} else {
-			telemetry.Syncs.Add(ctx, 1,
-				metric.WithAttributes(
-					attribute.KeyValue{
-						Key:   "image",
-						Value: attribute.StringValue(image.Source),
-					},
-					attribute.KeyValue{
-						Key:   "tag",
-						Value: attribute.StringValue(tag),
-					},
-				),
-			)
-		}
+		syncTag(ctx, image, tag, dstTags)
 	}
+
+	// Purge
+	purge(ctx, image, srcTags, dstTags)
 
 	return nil
 }

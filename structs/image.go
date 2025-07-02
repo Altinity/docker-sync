@@ -14,6 +14,7 @@ type Image struct {
 	IgnoredTags []string             `json:"ignoredTags" yaml:"ignoredTags"`
 	Tags        []string             `json:"tags" yaml:"tags"`
 	SrcRef      types.ImageReference `json:"-" yaml:"-"`
+	Purge       bool                 `json:"purge" yaml:"purge"`
 }
 
 func (i *Image) GetSource() string {
@@ -41,9 +42,6 @@ func (i *Image) GetRegistry(url string) string {
 
 	return fields[0]
 }
-
-
-
 
 func (i *Image) GetSourceRepository() string {
 	return i.GetRepository(i.Source)

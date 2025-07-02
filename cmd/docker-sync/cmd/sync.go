@@ -23,6 +23,7 @@ type syncImage struct {
 	Tags        []string `yaml:"tags"`
 	MutableTags []string `yaml:"mutableTags"`
 	IgnoredTags []string `yaml:"ignoredTags"`
+	Purge       bool     `yaml:"purge"`
 }
 
 type syncAuth struct {
@@ -74,6 +75,7 @@ var syncCmd = &cobra.Command{
 		tags, _ := cmd.Flags().GetStringSlice("tags")
 		mutableTags, _ := cmd.Flags().GetStringSlice("mutable-tags")
 		ignoredTags, _ := cmd.Flags().GetStringSlice("ignored-tags")
+		purge, _ := cmd.Flags().GetBool("purge")
 
 		cnf.Sync.Images = append(cnf.Sync.Images, syncImage{
 			Source:      source,
@@ -81,6 +83,7 @@ var syncCmd = &cobra.Command{
 			Tags:        tags,
 			MutableTags: mutableTags,
 			IgnoredTags: ignoredTags,
+			Purge:       purge,
 		})
 
 		var registries []syncRegistry
@@ -194,6 +197,8 @@ func init() {
 	syncCmd.Flags().StringP("target-password", "", os.Getenv("DOCKER_SYNC_TARGET_PASSWORD"), "target registry password")
 	syncCmd.Flags().StringP("target-token", "", os.Getenv("DOCKER_SYNC_TARGET_TOKEN"), "target registry token")
 	syncCmd.Flags().StringP("target-username", os.Getenv("DOCKER_SYNC_TARGET_USERNAME"), "", "target registry username")
+
+	syncCmd.Flags().BoolP("purge", "p", false, "Purge tags not in the source registry")
 
 	// For more registries and advanced options, please use a configuration file
 }
