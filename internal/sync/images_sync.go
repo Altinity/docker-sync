@@ -30,7 +30,7 @@ func syncTag(ctx context.Context, image *structs.Image, tag string, dstTags []st
 	var actualDsts []string
 
 	for _, dst := range image.Targets {
-		if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) {
+		if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) && !slices.Contains(image.MutableTags, "*") {
 			continue
 		}
 

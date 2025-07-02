@@ -32,7 +32,7 @@ jobs:
 
       - name: Calculate version
         id: calculate-version
-        uses: bitshifted/git-auto-semver@v1
+        uses: bitshifted/git-auto-semver@v2
         with:
           main_branch: main
           create_tag: true
