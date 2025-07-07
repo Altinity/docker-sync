@@ -6,10 +6,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.36.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.17
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.70
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.82
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.83
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.45.1
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.33.2
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.82.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.83.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/containers/image/v5 v5.35.0
 	github.com/jellydator/ttlcache/v3 v3.4.0
