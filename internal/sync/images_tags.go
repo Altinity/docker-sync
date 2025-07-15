@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -16,16 +17,33 @@ func getSourceTags(ctx context.Context, image *structs.Image, srcCtx *types.Syst
 	var srcTags []string
 	var err error
 
+	var allTags []string
+
 	if len(image.Tags) > 0 {
 		for _, tag := range image.Tags {
 			if tag == "@semver" {
-				allTags, err := docker.GetRepositoryTags(ctx, srcCtx, srcRef)
-				if err != nil {
-					return nil, err
+				if allTags == nil {
+					allTags, err = docker.GetRepositoryTags(ctx, srcCtx, srcRef)
+					if err != nil {
+						return nil, err
+					}
 				}
 
 				for _, t := range allTags {
 					if isSemVerTag(t) {
+						srcTags = append(srcTags, t)
+					}
+				}
+			} else if strings.Contains(tag, "*") {
+				if allTags == nil {
+					allTags, err = docker.GetRepositoryTags(ctx, srcCtx, srcRef)
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				for _, t := range allTags {
+					if match, err := filepath.Match(tag, t); err == nil && match {
 						srcTags = append(srcTags, t)
 					}
 				}
