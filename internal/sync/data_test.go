@@ -42,7 +42,7 @@ func TestS3DataCounter_Read(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			reader := &MockReader{strings.NewReader(tt.input)}
 			counter := s3DataCounter{
 				ctx:  ctx,
@@ -88,7 +88,7 @@ func TestS3DataCounter_Seek(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			reader := &MockReader{strings.NewReader(tt.input)}
 			counter := s3DataCounter{
 				ctx:  ctx,
@@ -144,7 +144,7 @@ func TestDockerDataCounter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), tt.contextTimeout)
+			ctx, cancel := context.WithTimeout(t.Context(), tt.contextTimeout)
 			defer cancel()
 
 			ch := make(chan types.ProgressProperties, len(tt.progressValues))

@@ -78,7 +78,7 @@ func TestGetR2Session(t *testing.T) {
 				assert.Equal(t, "us-east-1", cfg.Region)
 
 				// Verify credentials
-				creds, err := cfg.Credentials.Retrieve(context.Background())
+				creds, err := cfg.Credentials.Retrieve(t.Context())
 				assert.NoError(t, err)
 				assert.Equal(t, "r2-access-key", creds.AccessKeyID)
 				assert.Equal(t, "r2-secret-key", creds.SecretAccessKey)
@@ -236,7 +236,7 @@ func TestR2Integration(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID), *cfg.BaseEndpoint)
 
 		// Verify credentials
-		creds, err := cfg.Credentials.Retrieve(context.Background())
+		creds, err := cfg.Credentials.Retrieve(t.Context())
 		assert.NoError(t, err)
 		assert.Equal(t, os.Getenv("R2_ACCESS_KEY_ID"), creds.AccessKeyID)
 		assert.Equal(t, os.Getenv("R2_SECRET_ACCESS_KEY"), creds.SecretAccessKey)
@@ -300,7 +300,7 @@ func TestR2SyncObject(t *testing.T) {
 			}
 
 			err := syncObject(
-				context.Background(),
+				t.Context(),
 				s3c,
 				tt.key,
 				aws.String(tt.contentType),
@@ -314,14 +314,14 @@ func TestR2SyncObject(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Verify the object exists
-				exists, digest, err := s3ObjectExists(context.Background(), s3Session, bucket, tt.key)
+				exists, digest, err := s3ObjectExists(t.Context(), s3Session, bucket, tt.key)
 				assert.NoError(t, err)
 				assert.True(t, exists)
 				assert.NotEmpty(t, digest)
 				assert.True(t, strings.HasPrefix(digest, "sha256:"))
 
 				// Optional: verify content
-				output, err := s3Session.GetObject(context.Background(), &s3.GetObjectInput{
+				output, err := s3Session.GetObject(t.Context(), &s3.GetObjectInput{
 					Bucket: bucket,
 					Key:    aws.String(tt.key),
 				})
@@ -336,7 +336,7 @@ func TestR2SyncObject(t *testing.T) {
 			}
 
 			// Cleanup
-			_, err = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			_, err = s3Session.DeleteObject(t.Context(), &s3.DeleteObjectInput{
 				Bucket: bucket,
 				Key:    aws.String(tt.key),
 			})
@@ -362,13 +362,13 @@ func TestR2ObjectOperations(t *testing.T) {
 
 	t.Run("object lifecycle", func(t *testing.T) {
 		// Clean up any existing object
-		_, _ = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		_, _ = s3Session.DeleteObject(t.Context(), &s3.DeleteObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})
 
 		// Test object doesn't exist initially
-		exists, digest, err := s3ObjectExists(context.Background(), s3Session, bucket, testKey)
+		exists, digest, err := s3ObjectExists(t.Context(), s3Session, bucket, testKey)
 		assert.NoError(t, err)
 		assert.False(t, exists)
 		assert.Empty(t, digest)
@@ -387,7 +387,7 @@ func TestR2ObjectOperations(t *testing.T) {
 		}
 
 		err = syncObject(
-			context.Background(),
+			t.Context(),
 			s3c,
 			testKey,
 			aws.String("text/plain"),
@@ -397,14 +397,14 @@ func TestR2ObjectOperations(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify object exists
-		exists, digest, err = s3ObjectExists(context.Background(), s3Session, bucket, testKey)
+		exists, digest, err = s3ObjectExists(t.Context(), s3Session, bucket, testKey)
 		assert.NoError(t, err)
 		assert.True(t, exists)
 		assert.NotEmpty(t, digest)
 		assert.True(t, strings.HasPrefix(digest, "sha256:"))
 
 		// Verify content
-		output, err := s3Session.GetObject(context.Background(), &s3.GetObjectInput{
+		output, err := s3Session.GetObject(t.Context(), &s3.GetObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})
@@ -418,7 +418,7 @@ func TestR2ObjectOperations(t *testing.T) {
 		}
 
 		// Clean up
-		_, err = s3Session.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		_, err = s3Session.DeleteObject(t.Context(), &s3.DeleteObjectInput{
 			Bucket: bucket,
 			Key:    aws.String(testKey),
 		})

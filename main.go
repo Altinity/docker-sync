@@ -41,9 +41,9 @@ func Run(ctx context.Context) error {
 func RunOnce(ctx context.Context, images []*structs.Image) error {
 	var merr error
 
-	telemetry.MonitoredImages.Record(ctx, int64(len(images)))
-
 	for k := range images {
+		telemetry.MonitoredImages.Record(ctx, int64(len(images)))
+
 		select {
 		case <-ctx.Done():
 			return nil

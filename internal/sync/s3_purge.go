@@ -165,9 +165,7 @@ func getAllReferencedBlobsS3(ctx context.Context, s3Session *s3.Client, bucket s
 				matches := re.FindAllString(body, -1)
 
 				blobsMutex.Lock()
-				for _, match := range matches {
-					blobs = append(blobs, match)
-				}
+				blobs = append(blobs, matches...)
 				blobsMutex.Unlock()
 
 				return nil

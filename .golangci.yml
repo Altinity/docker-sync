@@ -1,60 +1,66 @@
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
-    #- goimports
-    #- gosec
-    - unused
     - asasalint
     - asciicheck
     - bidichk
     - bodyclose
     - decorder
-    #- dogsled
     - durationcheck
-    #- errcheck
     - errname
-    #- errorlint
     - exhaustive
-    #- funlen
     - goconst
     - gocritic
     - godot
-    #- gofmt
-    - gosimple
     - govet
     - ineffassign
     - mirror
     - musttag
-    - nestif
     - nosprintfhostport
-    #- prealloc
     - predeclared
     - staticcheck
-    - usetesting
     - tparallel
-    - typecheck
     - unconvert
+    - unused
     - usestdlibvars
+    - usetesting
     - wastedassign
-
-issues:
-  exclude-rules:
-    - path: '(.+)_test\.go'
-      linters:
-        - gosec
-        - funlen
-        - goconst
-        - gocritic
-        - staticcheck
-        - ineffassign
-    - linters:
-        - gosimple
-      text: "S1000"
-    - path: "config/keys.go"
-      linters:
-        - godot
-    - path: "internal/sync/images.go"
-      linters:
-        - nestif
-    - path: "reload.go"
-      text: "SA9003"
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - funlen
+          - goconst
+          - gocritic
+          - gosec
+          - ineffassign
+          - staticcheck
+        path: (.+)_test\.go
+      - linters:
+          - staticcheck
+        text: S1000
+      - linters:
+          - godot
+        path: config/keys.go
+      - linters:
+          - nestif
+        path: internal/sync/images.go
+      - path: reload.go
+        text: SA9003
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

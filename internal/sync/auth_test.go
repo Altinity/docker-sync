@@ -167,7 +167,7 @@ func TestGetSkopeoAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authConfig, authType := getSkopeoAuth(context.Background(), tt.url, tt.imageName)
+			authConfig, authType := getSkopeoAuth(t.Context(), tt.url, tt.imageName)
 			assert.Equal(t, tt.expectedAuthType, authType)
 			tt.checkAuthConfig(t, authConfig)
 		})

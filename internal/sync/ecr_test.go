@@ -18,7 +18,7 @@ func setupAWSEnv(t *testing.T) {
 func TestECRPrivateAuth(t *testing.T) {
 	setupAWSEnv(t)
 
-	username, password := authEcrPrivate(context.Background(), "test-repository")
+	username, password := authEcrPrivate(t.Context(), "test-repository")
 
 	if username == "" && password == "" {
 		t.Log("No ECR credentials returned - this is expected if no valid AWS credentials are available")
@@ -31,7 +31,7 @@ func TestECRPrivateAuth(t *testing.T) {
 func TestECRPublicAuth(t *testing.T) {
 	setupAWSEnv(t)
 
-	username, password := authEcrPublic(context.Background(), "test-repository")
+	username, password := authEcrPublic(t.Context(), "test-repository")
 
 	if username == "" && password == "" {
 		t.Log("No ECR public credentials returned - this is expected if no valid AWS credentials are available")

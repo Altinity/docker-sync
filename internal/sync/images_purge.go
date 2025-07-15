@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func delete(ctx context.Context, image *structs.Image, dst string, tag string) error {
+func deleteTag(ctx context.Context, image *structs.Image, dst string, tag string) error {
 	return backoff.RetryNotify(func() error {
 		switch getRepositoryType(dst) {
 		case S3CompatibleRepository:
@@ -140,7 +140,7 @@ func purge(ctx context.Context, image *structs.Image, srcTags []string, dstTags 
 				)
 
 				if err := func() error {
-					return delete(ctx, image, dst, tag)
+					return deleteTag(ctx, image, dst, tag)
 				}(); err != nil {
 					log.Error().
 						Err(err).
