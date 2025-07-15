@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/Altinity/docker-sync/internal/telemetry"
@@ -29,8 +30,15 @@ func syncTag(ctx context.Context, image *structs.Image, tag string, dstTags []st
 
 	var actualDsts []string
 
+	// Determine the actual destinations for the tag
 	for _, dst := range image.Targets {
-		if !slices.Contains(image.MutableTags, tag) && slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) && !slices.Contains(image.MutableTags, "*") {
+		if !slices.Contains(image.MutableTags, tag) && // Explicitly mutable tags
+			slices.Contains(dstTags, fmt.Sprintf("%s:%s", dst, tag)) && // Check if the tag already exists in the target
+			!slices.ContainsFunc(image.MutableTags, func(t string) bool {
+				match, _ := filepath.Match(t, tag)
+				return match
+			}) && // Check if the tag matches any mutable tag patterns
+			!slices.Contains(image.MutableTags, "*") { // All tags are mutable if "*" is present
 			continue
 		}
 
