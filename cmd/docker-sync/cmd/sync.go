@@ -52,7 +52,7 @@ type syncConfig struct {
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync a single image",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -167,9 +167,13 @@ var syncCmd = &cobra.Command{
 				Stack().
 				Err(err).
 				Msg("Error running Docker Sync")
+
+			return err
 		}
 
 		log.Info().Msg("Shutting down Docker Sync")
+
+		return nil
 	},
 }
 
