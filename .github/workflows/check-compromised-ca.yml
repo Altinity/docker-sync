@@ -1,0 +1,54 @@
+name: Check compromised CA trust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .github/workflows/check-compromised-ca.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-compromised-ca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The final Dockerfile copies this pre-built binary. Keep the flags
+      # aligned with .goreleaser.yaml.
+      - name: Build docker-sync binary
+        run: >-
+          CGO_ENABLED=0 go build -trimpath
+          -tags 'containers_image_docker_daemon_stub containers_image_openpgp containers_image_storage_stub'
+          -o docker-sync ./cmd/docker-sync
+
+      - name: Build final runtime image
+        run: docker build --tag local/docker-sync:ca-check .
+
+      - name: Verify compromised CA chains are rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoints=(
+            'https://dv-g3b-emudhra.we-have-a-problem.com/'
+            'https://dv-g3b-aaa-emudhra.we-have-a-problem.com/'
+          )
+
+          for endpoint in "${endpoints[@]}"; do
+            echo "Verifying that ${endpoint} is rejected"
+            if docker run --rm --entrypoint /bin/sh local/docker-sync:ca-check \
+              -c "wget -O /dev/null '${endpoint}'"; then
+              echo "ERROR: the final image still trusts a compromised CA chain: ${endpoint}" >&2
+              exit 1
+            fi
+          done
+
+
