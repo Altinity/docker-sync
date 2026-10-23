@@ -1,0 +1,224 @@
+name: Registry sync e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  registry-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Keep build flags aligned with .goreleaser.yaml. Dockerfile copies the
+      # resulting binary into the final runtime image.
+      - name: Build final docker-sync image
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -tags 'containers_image_docker_daemon_stub containers_image_openpgp containers_image_storage_stub' \
+            -o docker-sync ./cmd/docker-sync
+          docker build --tag local/docker-sync:e2e .
+
+      - name: Start disposable source and target registries
+        run: |
+          docker run --detach --rm --name e2e-registry-source --publish 5000:5000 registry:2
+          docker run --detach --rm --name e2e-registry-target --publish 5001:5000 registry:2
+
+          # Separate registries exercise basic auth in docker-sync itself.
+          # The credentials are fixed and disposable E2E-only values.
+          mkdir -p "$RUNNER_TEMP/registry-auth"
+          docker run --rm --entrypoint htpasswd httpd:2.4-alpine \
+            -Bbn e2e-user e2e-password > "$RUNNER_TEMP/registry-auth/htpasswd"
+          docker run --detach --rm --name e2e-registry-auth-source --publish 5002:5000 \
+            --env REGISTRY_AUTH=htpasswd \
+            --env REGISTRY_AUTH_HTPASSWD_REALM='Registry Realm' \
+            --env REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            --volume "$RUNNER_TEMP/registry-auth:/auth:ro" \
+            registry:2
+          docker run --detach --rm --name e2e-registry-auth-target --publish 5003:5000 \
+            --env REGISTRY_AUTH=htpasswd \
+            --env REGISTRY_AUTH_HTPASSWD_REALM='Registry Realm' \
+            --env REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            --volume "$RUNNER_TEMP/registry-auth:/auth:ro" \
+            registry:2
+
+      - name: Verify sync, auth, idempotency, mutable tags, and multi-arch images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_registry='localhost:5000/e2e/busybox'
+          target_registry='localhost:5001/e2e/busybox'
+          auth_source_registry='localhost:5002/e2e/busybox'
+          auth_target_registry='localhost:5003/e2e/busybox'
+          auth_user='e2e-user'
+          auth_password='e2e-password'
+
+          # containers/image requires TLS by default. This configuration is
+          # mounted only into the disposable E2E container; HTTP is allowed
+          # solely for the local registries.
+          cat > "$RUNNER_TEMP/registries.conf" <<'EOF'
+          [[registry]]
+          location = "localhost:5000"
+          insecure = true
+
+          [[registry]]
+          location = "localhost:5001"
+          insecure = true
+
+          [[registry]]
+          location = "localhost:5002"
+          insecure = true
+
+          [[registry]]
+          location = "localhost:5003"
+          insecure = true
+          EOF
+
+          # Docker only seeds and inspects the disposable registries. The
+          # transport under test is docker-sync in sync_tag below.
+          printf '%s' "$auth_password" | docker login localhost:5002 \
+            --username "$auth_user" --password-stdin
+          printf '%s' "$auth_password" | docker login localhost:5003 \
+            --username "$auth_user" --password-stdin
+
+          seed() {
+            local upstream_image="$1"
+            local registry="$2"
+            local tag="$3"
+            docker pull "$upstream_image"
+            docker tag "$upstream_image" "$registry:$tag"
+            docker push "$registry:$tag"
+          }
+
+          seed_source() {
+            seed "$1" "$source_registry" "$2"
+          }
+
+          seed_target() {
+            seed "$1" "$target_registry" "$2"
+          }
+
+          # A plain Docker Distribution registry creates a repository on its
+          # first push; ECR repositories already exist before docker-sync runs.
+          seed_target 'busybox:1.37.0' 'bootstrap'
+
+          digest() {
+            docker pull "$1" >/dev/null
+            docker image inspect "$1" --format '{{index .RepoDigests 0}}' | cut -d@ -f2
+          }
+
+          manifest_digest() {
+            local registry="$1"
+            local repository="$2"
+            local tag="$3"
+            curl --fail --silent --show-error --head \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "http://$registry/v2/$repository/manifests/$tag" |
+              tr -d '\r' | awk -F ': ' 'tolower($1) == "docker-content-digest" { print $2 }'
+          }
+
+          assert_manifest_list() {
+            local registry="$1"
+            local repository="$2"
+            local tag="$3"
+            curl --fail --silent --show-error \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "http://$registry/v2/$repository/manifests/$tag" |
+              jq -e '(.mediaType == "application/vnd.oci.image.index.v1+json" or .mediaType == "application/vnd.docker.distribution.manifest.list.v2+json") and (.manifests | length > 1)' >/dev/null
+          }
+
+          sync_tag() {
+            local source="$1"
+            local target="$2"
+            local tag="$3"
+            local mutable_tag="${4:-}"
+            local source_username="${5:-}"
+            local source_password="${6:-}"
+            local target_username="${7:-}"
+            local target_password="${8:-}"
+
+            docker run --rm --network host \
+              --volume "$RUNNER_TEMP/registries.conf:/tmp/registries.conf:ro" \
+              --entrypoint sh local/docker-sync:e2e -ec '
+                mkdir -p /root/.config/containers
+                cp /tmp/registries.conf /root/.config/containers/registries.conf
+                source="$1"
+                target="$2"
+                tag="$3"
+                mutable_tag="$4"
+                source_username="$5"
+                source_password="$6"
+                target_username="$7"
+                target_password="$8"
+                set -- /docker-sync sync --source "$source" --target "$target" --tags "$tag"
+                [ -n "$mutable_tag" ] && set -- "$@" --mutable-tags "$mutable_tag"
+                [ -n "$source_username" ] && set -- "$@" --source-username "$source_username"
+                [ -n "$source_password" ] && set -- "$@" --source-password "$source_password"
+                [ -n "$target_username" ] && set -- "$@" --target-username "$target_username"
+                [ -n "$target_password" ] && set -- "$@" --target-password "$target_password"
+                exec "$@"
+              ' sh "$source" "$target" "$tag" "$mutable_tag" \
+              "$source_username" "$source_password" "$target_username" "$target_password"
+          }
+
+          # Pinned tag: initial and repeat sync preserve the OCI manifest.
+          seed_source 'busybox:1.37.0' '1.37.0'
+          sync_tag "$source_registry" "$target_registry" '1.37.0'
+          test "$(digest "$source_registry:1.37.0")" = "$(digest "$target_registry:1.37.0")"
+          sync_tag "$source_registry" "$target_registry" '1.37.0'
+          test "$(digest "$source_registry:1.37.0")" = "$(digest "$target_registry:1.37.0")"
+
+          # Mutable tag: the target must follow a changed source latest tag.
+          seed_source 'busybox:1.37.0' 'latest'
+          sync_tag "$source_registry" "$target_registry" 'latest' 'latest'
+          seed_source 'busybox:1.38.0' 'latest'
+          expected_digest="$(digest "$source_registry:latest")"
+          sync_tag "$source_registry" "$target_registry" 'latest' 'latest'
+          test "$expected_digest" = "$(digest "$target_registry:latest")"
+
+          # Basic auth success covers both pull and push credentials. A wrong
+          # source password must not fall back to anonymous access.
+          seed 'busybox:1.37.0' "$auth_source_registry" 'auth'
+          seed 'busybox:1.37.0' "$auth_target_registry" 'bootstrap'
+          sync_tag "$auth_source_registry" "$auth_target_registry" 'auth' '' \
+            "$auth_user" "$auth_password" "$auth_user" "$auth_password"
+          test "$(digest "$auth_source_registry:auth")" = "$(digest "$auth_target_registry:auth")"
+          if sync_tag "$auth_source_registry" "$auth_target_registry" 'auth' '' \
+            "$auth_user" 'wrong-password' "$auth_user" "$auth_password"; then
+            echo 'docker-sync accepted an invalid source-registry password' >&2
+            exit 1
+          fi
+
+          # Preserve a multi-platform OCI index, not just one platform's
+          # image manifest. busybox publishes multiple platforms.
+          docker buildx imagetools create --insecure --prefer-index \
+            --tag "$source_registry:multiarch" docker.io/library/busybox:1.37.0
+          sync_tag "$source_registry" "$target_registry" 'multiarch'
+          assert_manifest_list localhost:5000 e2e/busybox multiarch
+          assert_manifest_list localhost:5001 e2e/busybox multiarch
+          test "$(manifest_digest localhost:5000 e2e/busybox multiarch)" = \
+            "$(manifest_digest localhost:5001 e2e/busybox multiarch)"
+
+      - name: Show registry logs on failure
+        if: failure()
+        run: |
+          docker logs e2e-registry-source || true
+          docker logs e2e-registry-target || true
+          docker logs e2e-registry-auth-source || true
+          docker logs e2e-registry-auth-target || true
+
+      - name: Stop disposable registries
+        if: always()
+        run: docker rm --force e2e-registry-source e2e-registry-target e2e-registry-auth-source e2e-registry-auth-target || true
