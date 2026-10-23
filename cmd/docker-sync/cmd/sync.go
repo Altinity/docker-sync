@@ -162,7 +162,6 @@ var syncCmd = &cobra.Command{
 		images := config.SyncImages.Images()
 
 		if err := dockersync.RunOnce(ctx, images); err != nil {
-			cmd.Annotations["error"] = err.Error()
 			log.Error().
 				Stack().
 				Err(err).
