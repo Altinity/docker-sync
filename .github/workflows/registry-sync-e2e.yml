@@ -1,0 +1,122 @@
+name: Registry sync e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  registry-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Keep build flags aligned with .goreleaser.yaml. Dockerfile copies the
+      # resulting binary into the final runtime image.
+      - name: Build final docker-sync image
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -tags 'containers_image_docker_daemon_stub containers_image_openpgp containers_image_storage_stub' \
+            -o docker-sync ./cmd/docker-sync
+          docker build --tag local/docker-sync:e2e .
+
+      - name: Start disposable source and target registries
+        run: |
+          docker run --detach --rm --name e2e-registry-source --publish 5000:5000 registry:2
+          docker run --detach --rm --name e2e-registry-target --publish 5001:5000 registry:2
+
+      - name: Verify image sync, idempotency, and mutable tag update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_registry='localhost:5000/e2e/busybox'
+          target_registry='localhost:5001/e2e/busybox'
+
+          # containers/image, used by docker-sync, requires TLS by default.
+          # This configuration is mounted only into the disposable E2E
+          # container; it allows HTTP solely for the two local registries.
+          cat > "$RUNNER_TEMP/registries.conf" <<'EOF'
+          [[registry]]
+          location = "localhost:5000"
+          insecure = true
+
+          [[registry]]
+          location = "localhost:5001"
+          insecure = true
+          EOF
+
+          seed_source() {
+            local upstream_image="$1"
+            local tag="$2"
+            docker pull "$upstream_image"
+            docker tag "$upstream_image" "$source_registry:$tag"
+            docker push "$source_registry:$tag"
+          }
+
+          seed_target() {
+            local upstream_image="$1"
+            local tag="$2"
+            docker pull "$upstream_image"
+            docker tag "$upstream_image" "$target_registry:$tag"
+            docker push "$target_registry:$tag"
+          }
+
+          # A plain Docker Distribution registry creates a repository on its
+          # first push; ECR repositories already exist before docker-sync runs.
+          seed_target 'busybox:1.37.0' 'bootstrap'
+
+          digest() {
+            docker pull "$1" >/dev/null
+            docker image inspect "$1" --format '{{index .RepoDigests 0}}' | cut -d@ -f2
+          }
+
+          sync_tag() {
+            docker run --rm --network host \
+              --volume "$RUNNER_TEMP/registries.conf:/tmp/registries.conf:ro" \
+              --entrypoint sh local/docker-sync:e2e -ec '
+                mkdir -p /root/.config/containers
+                cp /tmp/registries.conf /root/.config/containers/registries.conf
+                if [ -n "$4" ]; then
+                  exec /docker-sync sync --source "$1" --target "$2" --tags "$3" --mutable-tags "$4"
+                fi
+                exec /docker-sync sync --source "$1" --target "$2" --tags "$3"
+              ' sh "$source_registry" "$target_registry" "$1" "${2:-}"
+          }
+
+          # Pinned tag: initial sync and a repeat sync must preserve the OCI
+          # manifest digest.
+          seed_source 'busybox:1.37.0' '1.37.0'
+          sync_tag '1.37.0'
+          test "$(digest "$source_registry:1.37.0")" = "$(digest "$target_registry:1.37.0")"
+          sync_tag '1.37.0'
+          test "$(digest "$source_registry:1.37.0")" = "$(digest "$target_registry:1.37.0")"
+
+          # Mutable tag: after source:latest changes, target:latest must follow
+          # it and preserve the new manifest digest.
+          seed_source 'busybox:1.37.0' 'latest'
+          sync_tag 'latest' 'latest'
+          seed_source 'busybox:1.38.0' 'latest'
+          expected_digest="$(digest "$source_registry:latest")"
+          sync_tag 'latest' 'latest'
+          test "$expected_digest" = "$(digest "$target_registry:latest")"
+
+      - name: Show registry logs on failure
+        if: failure()
+        run: |
+          docker logs e2e-registry-source || true
+          docker logs e2e-registry-target || true
+
+      - name: Stop disposable registries
+        if: always()
+        run: docker rm --force e2e-registry-source e2e-registry-target || true
