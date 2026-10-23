@@ -1,5 +1,7 @@
 FROM alpine:3.21.2
-RUN apk add --no-cache ca-certificates gpgme tini && update-ca-certificates
+RUN apk add --no-cache ca-certificates gpgme tini && \
+    apk add --no-cache --upgrade ca-certificates && \
+    update-ca-certificates
 
 COPY docker-sync /
 COPY entrypoint.sh /
